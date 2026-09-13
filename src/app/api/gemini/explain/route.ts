@@ -3,32 +3,26 @@ import { requireVerifiedStudent } from "@/lib/auth0";
 import { allowRate } from "@/lib/rate-limit";
 import { assertSameOriginMutation } from "@/lib/security";
 import { integrationErrorResponse, parseJson } from "@/lib/integrations/api";
-import { fetchWithTimeout, readJson } from "@/lib/integrations/http";
+import { explainRecommendation } from "@/lib/integrations/gemini";
+import { createServerSupabaseClient, SupabaseConfigurationError } from "@/lib/supabase/factory";
+import { getMyProfile, listRecommendedServices } from "@/lib/supabase/repository";
+import { isServiceCategory } from "@/lib/service-taxonomy";
 
-type ExplainRequest = {
-  title: string;
-  category: string;
-  distanceMiles: number;
-  adjustedRating: number;
-  deterministicExplanation: string;
-};
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-type GeminiPayload = {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-};
-
-function validRequest(value: unknown): value is ExplainRequest {
-  if (!value || typeof value !== "object") return false;
-  const input = value as Record<string, unknown>;
-  return (
-    typeof input.title === "string" && input.title.length <= 160 &&
-    typeof input.category === "string" && input.category.length <= 80 &&
-    typeof input.distanceMiles === "number" && Number.isFinite(input.distanceMiles) && input.distanceMiles >= 0 && input.distanceMiles <= 100 &&
-    typeof input.adjustedRating === "number" && Number.isFinite(input.adjustedRating) && input.adjustedRating >= 0 && input.adjustedRating <= 5 &&
-    typeof input.deterministicExplanation === "string" && input.deterministicExplanation.length <= 500
-  );
+function distanceBand(distance: number) {
+  return distance <= 0.25 ? "on-campus" as const : distance <= 1 ? "nearby" as const : distance <= 5 ? "within-campus-area" as const : "far" as const;
 }
 
+function ratingBand(rating: number) {
+  return rating >= 4.5 ? "4.5+" as const : rating >= 4 ? "4+" as const : "new" as const;
+}
+
+function completedBand(completed: number) {
+  return completed <= 0 ? "none" as const : completed <= 10 ? "1-10" as const : completed <= 50 ? "11-50" as const : "50+" as const;
+}
+
+/** Gemini receives only server-projected public signals for the requested service. */
 export async function POST(request: Request) {
   try {
     assertSameOriginMutation(request);
@@ -36,50 +30,38 @@ export async function POST(request: Request) {
     if (!auth.ok) return NextResponse.json({ error: auth.code }, { status: auth.status });
     const rate = await allowRate(auth.student.sub, "gemini-explain", 20, 60_000);
     if (!rate.allowed) {
-      return NextResponse.json(
-        { error: "Too many requests.", code: "rate_limited" },
-        { status: 429, headers: { "retry-after": String(rate.retryAfterSeconds) } },
-      );
+      return NextResponse.json({ error: "Too many requests.", code: "rate_limited" }, {
+        status: 429,
+        headers: { "retry-after": String(rate.retryAfterSeconds) },
+      });
     }
-    const input: unknown = await parseJson(request, 32_000);
-    if (!validRequest(input)) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
-
-    const fallback = input.deterministicExplanation.slice(0, 180);
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return NextResponse.json({ explanation: fallback, source: "deterministic" });
-
-    const model = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
-    const response = await fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-        body: JSON.stringify({
-          contents: [{
-            role: "user",
-            parts: [{
-              text: [
-                "Rewrite this campus marketplace recommendation in one factual sentence under 24 words.",
-                "Do not add claims, names, prices, or safety guarantees.",
-                `Service: ${input.title}`,
-                `Category: ${input.category}`,
-                `Distance: ${input.distanceMiles.toFixed(1)} miles`,
-                `Adjusted rating: ${input.adjustedRating.toFixed(1)}`,
-                `Source explanation: ${fallback}`,
-              ].join("\n"),
-            }],
-          }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 60 },
-        }),
-      },
-      4_500,
-    );
-    if (!response.ok) return NextResponse.json({ explanation: fallback, source: "deterministic" });
-    const payload = await readJson<GeminiPayload>(response);
-    const generated = payload.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    const safe = generated && generated.length <= 180 ? generated : fallback;
-    return NextResponse.json({ explanation: safe, source: safe === fallback ? "deterministic" : "gemini" });
+    const input = await parseJson(request, 8_000);
+    if (input.geminiConsent !== true) {
+      return NextResponse.json({ error: "Gemini consent is required.", code: "consent_required" }, { status: 400 });
+    }
+    if (typeof input.serviceId !== "string" || !UUID.test(input.serviceId) || Object.keys(input).some((key) => !["serviceId", "geminiConsent"].includes(key))) {
+      return NextResponse.json({ error: "A valid serviceId is required.", code: "invalid_response" }, { status: 400 });
+    }
+    const client = await createServerSupabaseClient();
+    const [services, profile] = await Promise.all([listRecommendedServices(client), getMyProfile(client)]);
+    const service = services.find((candidate) => candidate.id === input.serviceId);
+    if (!service || !isServiceCategory(service.category)) return NextResponse.json({ error: "Service is unavailable.", code: "not_found" }, { status: 404 });
+    const result = await explainRecommendation({
+      title: service.title,
+      category: service.category,
+      subcategory: service.subcategory ?? undefined,
+      approvedInterests: profile?.interests.slice(0, 8),
+      distanceBand: distanceBand(service.distanceMiles),
+      ratingBand: ratingBand(service.provider.rating),
+      responseBand: "unknown",
+      completedCountBand: completedBand(service.provider.completed),
+      deterministicExplanation: service.explanation,
+    });
+    return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof SupabaseConfigurationError) {
+      return NextResponse.json({ error: "Recommendation data is not configured.", code: "configuration" }, { status: 503 });
+    }
     return integrationErrorResponse(error);
   }
 }

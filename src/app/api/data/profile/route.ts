@@ -17,7 +17,8 @@ export async function PATCH(request: Request) {
     const result = await withDataClient();
     if (result.response) return result.response;
     const body = await bodyObject(request);
-    for (const key of ["displayName", "avatarUrl", "bio", "solanaWallet"] as const) {
+    if (body.solanaWallet !== undefined) throw inputError("Use the signed wallet-link flow.");
+    for (const key of ["displayName", "avatarUrl", "bio"] as const) {
       if (body[key] !== undefined && body[key] !== null && typeof body[key] !== "string") throw inputError(`${key} is invalid.`);
     }
     if (body.interests !== undefined && (!Array.isArray(body.interests) || body.interests.some((value) => typeof value !== "string"))) {
@@ -30,7 +31,6 @@ export async function PATCH(request: Request) {
       displayName: body.displayName as string | undefined,
       avatarUrl: body.avatarUrl as string | null | undefined,
       bio: body.bio as string | null | undefined,
-      solanaWallet: body.solanaWallet as string | null | undefined,
       interests: body.interests as string[] | undefined,
       avatarConfig: body.avatarConfig as AvatarConfig | undefined,
     }) });

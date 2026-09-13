@@ -133,7 +133,7 @@ private key, auth token, or wallet signing material.
   authenticated profile. The final idempotent claim uses the server-only
   `SUPABASE_SECRET_KEY`; it never handles service
   payments, escrow, withdrawals, or mainnet transactions.
-- Avatar Studio can connect an injected Phantom, Solflare, or compatible wallet,
+- The Laura avatar marketplace can connect an injected Phantom, Solflare, or compatible wallet,
   link only its public address to the authenticated profile, and submit the exact
   server quote as a Devnet System Program transfer. The signature is saved as soon
   as it is returned so a failed unlock can be retried without paying twice. Manual

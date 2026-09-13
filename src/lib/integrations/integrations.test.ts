@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isVerifiedStudent, verifiedStudentFromSessionClaims } from "../auth0";
+import { isVerifiedStudent, sanitizeSessionUser, verifiedStudentFromSessionClaims } from "../auth0";
 import { deterministicSuggestion, suggestService } from "./gemini";
 import { appendTigerEvent, bindTigerActor, recordTigerEvent } from "./tiger";
 import { getCosmeticQuote, verifyCosmeticPayment } from "./solana";
@@ -10,6 +10,28 @@ afterEach(() => {
 });
 
 describe("Auth0 student boundary", () => {
+  it("keeps only the minimal profile and student-gate claims in the encrypted session", () => {
+    const user = sanitizeSessionUser({
+      sub: "waad|student",
+      email: "a@ttu.edu",
+      email_verified: true,
+      "https://hitmeup.tech/role": "authenticated",
+      "https://hitmeup.tech/edu_domain": "ttu.edu",
+      "https://hitmeup.tech/connection_strategy": "waad",
+      "https://hitmeup.tech/tid": "ttu-tenant",
+      incidental_claim: "must-not-enter-the-session-cookie",
+    } as never) as Record<string, unknown>;
+
+    expect(user).toMatchObject({
+      sub: "waad|student",
+      email: "a@ttu.edu",
+      "https://hitmeup.tech/role": "authenticated",
+      "https://hitmeup.tech/connection_strategy": "waad",
+      "https://hitmeup.tech/tid": "ttu-tenant",
+    });
+    expect(user).not.toHaveProperty("incidental_claim");
+  });
+
   it("requires a verified email on an approved edu domain", () => {
     expect(isVerifiedStudent({ sub: "student", email: "a@ttu.edu", email_verified: true })).toMatchObject({ eduDomain: "ttu.edu" });
     expect(isVerifiedStudent({ sub: "student", email: "a@ttu.edu", email_verified: false })).toBeNull();
@@ -58,6 +80,34 @@ describe("Gemini integration", () => {
     });
   });
 
+  it("sends the complete category and subcategory taxonomy to Gemini", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify({
+        category: "Businesses",
+        subcategory: "Student businesses",
+        tags: ["student", "business"],
+        suggestedTitle: "Campus print shop",
+        riskFlags: [],
+        searchKeywords: ["campus", "printing"],
+      }) }] } }],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(suggestService({ title: "Campus print shop", description: "Student-run printing near campus" })).resolves.toMatchObject({
+      source: "gemini",
+      category: "Businesses",
+      subcategory: "Student businesses",
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      contents: Array<{ parts: Array<{ text: string }> }>;
+      generationConfig: { responseSchema: { properties: { category: { enum: string[] } } } };
+    };
+    expect(body.contents[0].parts[0].text).toContain('"Tutoring":["Tutoring","Homework help","Study sessions","Exam prep","Coding help","Languages"]');
+    expect(body.generationConfig.responseSchema.properties.category.enum).toContain("Businesses");
+  });
+
   it("does not hide fallback behavior behind an AI label", () => {
     expect(deterministicSuggestion({ title: "", description: "Math tutoring" }).source).toBe("deterministic-fallback");
   });
@@ -66,11 +116,11 @@ describe("Gemini integration", () => {
 describe("Solana Devnet boundary", () => {
   it("returns an authenticated-client quote from server-only Devnet configuration", () => {
     vi.stubEnv("SOLANA_TREASURY", "11111111111111111111111111111111");
-    expect(getCosmeticQuote("profile-frame")).toEqual({
+    expect(getCosmeticQuote("avatar-premium-collection")).toEqual({
       network: "devnet",
-      productId: "profile-frame",
-      label: "Profile frame",
-      lamports: 10_000_000,
+      productId: "avatar-premium-collection",
+      label: "Avatar premium collection",
+      lamports: 50_000_000,
       treasury: "11111111111111111111111111111111",
     });
   });
@@ -78,20 +128,43 @@ describe("Solana Devnet boundary", () => {
   it("rejects non-Devnet configuration before making an RPC request", async () => {
     vi.stubEnv("SOLANA_TREASURY", "11111111111111111111111111111111");
     vi.stubEnv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com");
-    await expect(verifyCosmeticPayment("2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2", "profile-frame", "11111111111111111111111111111111")).rejects.toThrow("restricted to Devnet");
+    await expect(verifyCosmeticPayment("2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2", "avatar-premium-collection", "11111111111111111111111111111111")).rejects.toThrow("restricted to Devnet");
   });
 
   it("requires a confirmed transfer to the configured treasury", async () => {
     vi.stubEnv("SOLANA_TREASURY", "11111111111111111111111111111111");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ result: { slot: 42, meta: { err: null }, transaction: { message: { accountKeys: [{ pubkey: "11111111111111111111111111111111", signer: false }, { pubkey: "22222222222222222222222222222222", signer: true }], instructions: [{ program: "system", parsed: { type: "transfer", info: { source: "22222222222222222222222222222222", destination: "11111111111111111111111111111111", lamports: 10_000_000 } } }] } } } }), { status: 200, headers: { "content-type": "application/json" } })));
-    const result = await verifyCosmeticPayment("2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2", "profile-frame", "22222222222222222222222222222222");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ result: { slot: 42, meta: { err: null }, transaction: { message: { accountKeys: [{ pubkey: "11111111111111111111111111111111", signer: false }, { pubkey: "22222222222222222222222222222222", signer: true }], instructions: [{ program: "system", parsed: { type: "transfer", info: { source: "22222222222222222222222222222222", destination: "11111111111111111111111111111111", lamports: 50_000_000 } } }] } } } }), { status: 200, headers: { "content-type": "application/json" } })));
+    const result = await verifyCosmeticPayment("2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2", "avatar-premium-collection", "22222222222222222222222222222222");
     expect(result).toMatchObject({ verified: true, network: "devnet", slot: 42 });
+  });
+
+  it("rejects a transaction response without confirmation metadata", async () => {
+    vi.stubEnv("SOLANA_TREASURY", "11111111111111111111111111111111");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ result: {
+      slot: 42,
+      transaction: { message: {
+        accountKeys: [
+          { pubkey: "11111111111111111111111111111111", signer: false },
+          { pubkey: "22222222222222222222222222222222", signer: true },
+        ],
+        instructions: [{ program: "system", parsed: { type: "transfer", info: {
+          source: "22222222222222222222222222222222",
+          destination: "11111111111111111111111111111111",
+          lamports: 50_000_000,
+        } } }],
+      } },
+    } }), { status: 200, headers: { "content-type": "application/json" } })));
+    await expect(verifyCosmeticPayment(
+      "2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2",
+      "avatar-premium-collection",
+      "22222222222222222222222222222222",
+    )).rejects.toThrow("not confirmed or failed");
   });
 
   it("rejects a confirmed transfer from a different wallet", async () => {
     vi.stubEnv("SOLANA_TREASURY", "11111111111111111111111111111111");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ result: { slot: 42, meta: { err: null }, transaction: { message: { accountKeys: [{ pubkey: "11111111111111111111111111111111", signer: false }, { pubkey: "22222222222222222222222222222222", signer: true }], instructions: [{ program: "system", parsed: { type: "transfer", info: { source: "22222222222222222222222222222222", destination: "11111111111111111111111111111111", lamports: 10_000_000 } } }] } } } }), { status: 200, headers: { "content-type": "application/json" } })));
-    await expect(verifyCosmeticPayment("2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2", "profile-frame", "33333333333333333333333333333333")).rejects.toThrow("does not pay");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ result: { slot: 42, meta: { err: null }, transaction: { message: { accountKeys: [{ pubkey: "11111111111111111111111111111111", signer: false }, { pubkey: "22222222222222222222222222222222", signer: true }], instructions: [{ program: "system", parsed: { type: "transfer", info: { source: "22222222222222222222222222222222", destination: "11111111111111111111111111111111", lamports: 50_000_000 } } }] } } } }), { status: 200, headers: { "content-type": "application/json" } })));
+    await expect(verifyCosmeticPayment("2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2", "avatar-premium-collection", "33333333333333333333333333333333")).rejects.toThrow("does not pay");
   });
 });
 

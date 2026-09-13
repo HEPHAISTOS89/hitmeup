@@ -6,10 +6,10 @@ Product loop: verified student opens their own profile -> reviews or edits chose
 
 ### Observed
 
-- `profiles` already stores a display name, optional bio, interests, aggregate rating/completion counts, avatar configuration, and private wallet data.
+- `profiles` stores a display name, optional bio, interests, aggregate rating/completion counts, historical avatar configuration, and private wallet data. The visible Laura look is resolved from the server-owned marketplace loadout.
 - `service_requests` already records the current student's role, service summary, lifecycle status, counterpart projection, and dates. This is the source of profile activity; there is no meetup table.
 - Ratings are one per participant and existing policy reveals them only after both participants submit. Rating comments already support 500 characters in the database and repository.
-- Avatar Studio and the cosmetic SKU called `campus-theme` already exist. That SKU changes an avatar effect; it is not the application color theme.
+- Laura’s avatar marketplace is a separate route. Avatar cosmetics never change the application color theme.
 
 ### Inferred
 
@@ -39,7 +39,7 @@ Product loop: verified student opens their own profile -> reviews or edits chose
 | Profile stats | Summarize completion, provided services, rating | profile aggregate + request projection | zero/new, populated | Implemented |
 | Activity/history | Understand current and previous one-off services | existing `list_my_service_requests` | in progress, last 30 days, earlier, empty | Implemented |
 | Reviews received | Read reviews about the signed-in student only | new `list_my_received_reviews` RPC | loading, populated, empty, error | Conditional on migration in live mode |
-| Avatar Studio | Customize visual identity without conflating app theme | existing profile/cosmetics APIs | existing studio states | Preserved as a separate section |
+| Laura avatar marketplace | Customize the actual Laura raster character, accessories and backdrop without conflating app theme | `list_my_avatar_marketplace`, rewards and verified Devnet entitlement APIs | loading, ready, preview, ownership/equip error, rewards error, Devnet configuration/error/success | Implemented as `/avatar`; retired studio and generic cosmetics route removed |
 | Rating drawer comment | Add an optional respectful note | existing rating POST/RPC | empty, 1-500 chars, submitted/disabled | Implemented |
 | Local preview | Demonstrate profile, activity, review, and reversible edits | explicit in-memory fixtures | sample, editing, saved, cancel, reset/reload | Implemented; always labeled non-live |
 

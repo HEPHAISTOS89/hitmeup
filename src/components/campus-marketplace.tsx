@@ -1,12 +1,12 @@
 "use client";
 
 import {
-  ArrowLeft, ArrowRight, BadgeDollarSign, BadgeCheck, BadgePercent, Bell, Bike, BookOpen,
+  ArrowLeft, BadgeDollarSign, BadgeCheck, BadgePercent, Bell, Bike, BookOpen,
   Briefcase, Calendar, CalendarDays, Camera, Car, Check, ChevronRight, CircleDot,
   CircleHelp, CircleDollarSign, Clock3, ClipboardCheck, Code2, Coffee, Compass,
   Crown, Dices, Dumbbell, Filter, Gamepad2, Goal, GraduationCap, Hammer,
   HandHelping, HeartHandshake, Languages, Laptop, LayoutGrid, Library,
-  LocateFixed, LockKeyhole, MapPin, Megaphone, MessageCircle, Mic2, Mountain,
+  LocateFixed, LoaderCircle, LockKeyhole, MapPin, Megaphone, MessageCircle, Mic2, Mountain,
   Music2, Navigation, PackageOpen, Palette, PartyPopper, Pencil, PersonStanding,
   Plus, PlugZap, Presentation, Search, Send, Scissors, Settings2, ShieldCheck,
   ShoppingBag, Sparkles, SprayCan, Star, Store, Ticket, Trash2, Trees,
@@ -27,10 +27,10 @@ import {
   type SetStateAction,
 } from "react";
 import { CampusMap } from "./campus-map";
-import { RatingGate } from "./rating-gate";
-import { ProfileAvatarLink, ProfileAvatarPicture } from "./profile-avatar-link";
 import { EntryFlow, type EntryState } from "./entry-flow";
 import { HitMeUpLogo } from "./hitmeup-logo";
+import { ProfileAvatarLink, ProfileAvatarPicture } from "./profile-avatar-link";
+import { RatingGate } from "./rating-gate";
 import { ThemeToggle } from "./theme-toggle";
 import { CAMPUS_CENTER, SERVICES } from "@/lib/service-catalog";
 import {
@@ -39,27 +39,34 @@ import {
   createRequest,
   createService,
   getMessages,
+  getAvatarMarketplace,
   getNotifications,
   getProfile,
+  getRecommendations,
   getReceivedReviews,
   getRequests,
   getServices,
   getSharedLocation,
+  interpretDiscovery,
   markNotificationsRead,
+  normalizeServiceSnapshot,
   postMessage,
+  recordProductEvent,
+  explainServiceRecommendation,
   revokeLocation,
   shareLocation,
   submitRating,
   suggestServiceDraft,
   updateProfile,
   updateRequestStatus,
+  type BackendService,
 } from "@/lib/client-api";
 import { filterAndRankServices } from "@/lib/discovery";
 import { groupProfileActivity, profileActivityDate, profileActivityRoleLabel, providedServiceCount } from "@/lib/profile-experience";
 import { canRevealExactLocation } from "@/lib/privacy";
 import { canTransitionRequest } from "@/lib/request-state";
 import { CATEGORY_CATALOG, SERVICE_CATEGORIES, categoryAccent, categoryDefinition, isServiceCategory, subcategoriesFor, type ServiceIconName } from "@/lib/service-taxonomy";
-import type { ListingKind, NotificationProjection, ProfileProjection, ProfileReview, RequestMessage, RequestStage, Service, ServiceCategory, ServiceRequestSummary, SharedLocation } from "@/lib/types";
+import type { AvatarMarketplaceProjection, ListingKind, NotificationProjection, ProfileProjection, ProfileReview, RankedService, RequestMessage, RequestStage, Service, ServiceCategory, ServiceRequestSummary, SharedLocation } from "@/lib/types";
 
 const CATEGORIES: Array<ServiceCategory | "All"> = ["All", ...SERVICE_CATEGORIES];
 
@@ -144,6 +151,7 @@ type EntryTarget = EntryState | "app";
 type DataMode = "live" | "preview";
 type SurfaceMode = "default" | "loading" | "offline";
 type ChatConnection = "preview" | "connecting" | "online" | "reconnecting";
+type LiveDataConnection = "preview" | "connecting" | "online" | "reconnecting";
 type ListingFilter = ListingKind | "all";
 
 function notificationCopy(notification: NotificationProjection) {
@@ -153,6 +161,19 @@ function notificationCopy(notification: NotificationProjection) {
     if (typeof payload.title === "string") return payload.title;
   }
   return notification.type.replaceAll("_", " ");
+}
+
+function preferredCategoriesFromProfile(profile: ProfileProjection | null): ServiceCategory[] {
+  if (!profile) return [];
+  const interests = profile.interests.map((interest) => interest.trim().toLocaleLowerCase()).filter(Boolean);
+  return SERVICE_CATEGORIES.filter((category) => {
+    const definition = categoryDefinition(category);
+    return interests.some((interest) =>
+      interest === category.toLocaleLowerCase()
+      || interest === definition.label.toLocaleLowerCase()
+      || definition.subcategories.some((item) => interest === item.label.toLocaleLowerCase()),
+    );
+  });
 }
 
 function formatMessageTime(value: string) {
@@ -229,6 +250,14 @@ function serviceForRequest(request: ServiceRequestSummary, service?: Service): S
   };
 }
 
+export function requestForProjection(
+  requests: ServiceRequestSummary[],
+  preferred?: ServiceRequestSummary,
+) {
+  return requests.find((request) => request.status === "rating_pending" && !request.ratings.mine)
+    ?? preferred;
+}
+
 export function CampusMarketplace({ initialEntry = "splash", dataMode = "live", initialView = "discover" }: { initialEntry?: EntryTarget; dataMode?: DataMode; initialView?: AppView }) {
   const [entry, setEntry] = useState<EntryTarget>(initialEntry);
 
@@ -247,9 +276,8 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
   const [query, setQuery] = useState("");
   const [maxDistanceMiles, setMaxDistanceMiles] = useState(3);
   const [minimumRating, setMinimumRating] = useState(0);
-  const [availableNow, setAvailableNow] = useState(false);
+  const [availabilityWindow, setAvailabilityWindow] = useState<"any" | "now" | "today" | "this-week">("any");
   const [selectedId, setSelectedId] = useState<string | undefined>(dataMode === "preview" ? SERVICES[0]?.id : undefined);
-  const [pinOpen, setPinOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [businessModal, setBusinessModal] = useState<Service | "sponsor" | null>(null);
@@ -270,12 +298,18 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [chatError, setChatError] = useState("");
   const [chatConnection, setChatConnection] = useState<ChatConnection>(dataMode === "preview" ? "preview" : "connecting");
+  const [liveDataConnection, setLiveDataConnection] = useState<LiveDataConnection>(dataMode === "preview" ? "preview" : "connecting");
   const [requests, setRequests] = useState<ServiceRequestSummary[]>(dataMode === "preview" ? PREVIEW_REQUESTS : []);
   const [activeRequestId, setActiveRequestId] = useState<string | undefined>(dataMode === "preview" ? PREVIEW_REQUESTS[0]?.id : undefined);
   const [profile, setProfile] = useState<ProfileProjection | null>(dataMode === "preview" ? PREVIEW_PROFILE : null);
+  const [avatarMarketplace, setAvatarMarketplace] = useState<AvatarMarketplaceProjection[]>([]);
+  const [avatarMarketplaceStatus, setAvatarMarketplaceStatus] = useState<"loading" | "ready" | "error" | "preview">(dataMode === "preview" ? "preview" : "loading");
   const [reviews, setReviews] = useState<ProfileReview[]>(dataMode === "preview" ? PREVIEW_REVIEWS : []);
   const [reviewsStatus, setReviewsStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
   const [notifications, setNotifications] = useState<NotificationProjection[]>([]);
+  const [requestsStatus, setRequestsStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
+  const [profileStatus, setProfileStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
+  const [notificationsStatus, setNotificationsStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
   const [sharedLocation, setSharedLocation] = useState<SharedLocation | null>(null);
   const [dataError, setDataError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
@@ -287,10 +321,27 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantSource, setAssistantSource] = useState<"gemini" | "deterministic-fallback" | "template">();
   const [assistantError, setAssistantError] = useState("");
+  const [assistantDetails, setAssistantDetails] = useState<{ explanation: string; tags: string[]; riskFlags: string[]; priceNote: string; availabilityNote: string } | null>(null);
+  const [smartPrompt, setSmartPrompt] = useState("");
+  const [smartConsent, setSmartConsent] = useState(false);
+  const [smartBusy, setSmartBusy] = useState(false);
+  const [smartError, setSmartError] = useState("");
+  const [smartResult, setSmartResult] = useState<{ source: "gemini" | "deterministic-fallback" | "preview"; summary: string } | null>(null);
+  const [matchExplanation, setMatchExplanation] = useState<{ serviceId: string; text: string; source: "gemini" | "deterministic-fallback" | "preview" } | null>(null);
+  const [matchExplanationBusy, setMatchExplanationBusy] = useState(false);
+  const [serverRecommendations, setServerRecommendations] = useState<Record<string, { score: number; explanation: string }>>({});
+  const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
+  const [compactViewport, setCompactViewport] = useState(false);
+  const [mapInView, setMapInView] = useState(true);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const mapStageRef = useRef<HTMLElement>(null);
   const shellRef = useRef<HTMLElement>(null);
   const activeRequestIdRef = useRef<string | undefined>(dataMode === "preview" ? PREVIEW_REQUESTS[0]?.id : undefined);
   const requestsFetchGeneration = useRef(0);
+  const preferredCategories = useMemo(() => preferredCategoriesFromProfile(profile), [profile]);
+  const profileInterestKey = profile?.interests.join("\u0000") ?? "";
+  const personalizedDefaultView = category === "All" && !query.trim() && minimumRating === 0
+    && maxDistanceMiles === 3 && listingFilter === "all" && !subcategory && availabilityWindow === "any";
 
   const visibleServices = useMemo(() => filterAndRankServices(
     services,
@@ -299,14 +350,23 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
       categories: category === "All" ? [] : [category],
       maxDistanceMiles,
       minimumRating,
-      availableNow,
+      availableNow: availabilityWindow === "now",
+      availability: availabilityWindow,
       listingKind: listingFilter,
       subcategory,
     },
-    [],
-  ), [availableNow, category, listingFilter, maxDistanceMiles, minimumRating, query, services, subcategory]);
+    preferredCategories,
+  ), [availabilityWindow, category, listingFilter, maxDistanceMiles, minimumRating, preferredCategories, query, services, subcategory]);
 
-  const presentedServices = visibleServices;
+  const presentedServices = useMemo(() => {
+    if (!personalizedDefaultView) return visibleServices;
+    return [...visibleServices]
+      .sort((left, right) => (serverRecommendations[right.id]?.score ?? -1) - (serverRecommendations[left.id]?.score ?? -1))
+      .map((service) => {
+        const recommendation = serverRecommendations[service.id];
+        return recommendation ? { ...service, score: recommendation.score, explanation: recommendation.explanation } : service;
+      });
+  }, [personalizedDefaultView, serverRecommendations, visibleServices]);
   const selectedCategoryDefinition = category === "All" ? undefined : categoryDefinition(category);
   const availableSubcategories = category === "All" ? [] : subcategoriesFor(category);
 
@@ -321,11 +381,6 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
   const ratingBlocked = Boolean(pendingRating) || (stage === "rating_pending" && !currentRequest?.ratings.mine);
   const exactLocationVisible = ["accepted", "meeting"].includes(stage)
     && canRevealExactLocation(stage, requesterShared, providerShared);
-
-  // A request waiting on our rating takes precedence over whatever was selected:
-  // the rating gate must show the right counterpart.
-  const requestToProject = useCallback((items: ServiceRequestSummary[], preferred: ServiceRequestSummary | undefined) =>
-    items.find((item) => item.status === "rating_pending" && !item.ratings.mine) ?? preferred, []);
 
   const applyRequestProjection = useCallback((request: ServiceRequestSummary) => {
     if (activeRequestIdRef.current !== request.id) {
@@ -351,16 +406,25 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     if (dataMode === "preview") return;
     const timer = window.setTimeout(() => {
       setSurfaceMode("loading");
-      getServices({
-        category: category === "All" ? undefined : category,
-        query: query.trim() || undefined,
-        minRating: minimumRating || undefined,
-        maxDistanceMiles,
-        listingKind: listingFilter === "all" ? undefined : listingFilter,
-        subcategory,
-      })
+      const serviceRequest = personalizedDefaultView
+        ? getRecommendations()
+        : getServices({
+          category: category === "All" ? undefined : category,
+          query: query.trim() || undefined,
+          minRating: minimumRating || undefined,
+          maxDistanceMiles,
+          listingKind: listingFilter === "all" ? undefined : listingFilter,
+          subcategory,
+        });
+      serviceRequest
         .then((next) => {
           setServices(next);
+          setServerRecommendations(personalizedDefaultView
+            ? Object.fromEntries(next.map((service) => {
+              const recommendation = service as Service & { score: number; explanation: string };
+              return [recommendation.id, { score: recommendation.score, explanation: recommendation.explanation }];
+            }))
+            : {});
           setSelectedId((current) => next.some((service) => service.id === current) ? current : next[0]?.id);
           setDataError("");
           setSurfaceMode("default");
@@ -371,36 +435,123 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
         });
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [category, dataMode, listingFilter, maxDistanceMiles, minimumRating, query, subcategory]);
+  }, [category, dataMode, listingFilter, maxDistanceMiles, minimumRating, personalizedDefaultView, profileInterestKey, query, recommendationRefreshKey, subcategory]);
 
   useEffect(() => {
     if (dataMode === "preview") return;
     let active = true;
     const refresh = async () => {
       const requestGeneration = ++requestsFetchGeneration.current;
-      const results = await Promise.allSettled([getRequests(), getProfile(), getNotifications(), getReceivedReviews()]);
+      const results = await Promise.allSettled([getRequests(), getProfile(), getNotifications(), getReceivedReviews(), getAvatarMarketplace()]);
       if (!active) return;
       if (results[0].status === "fulfilled" && requestGeneration === requestsFetchGeneration.current) {
         const selectedRequestId = activeRequestIdRef.current;
-        const request = requestToProject(results[0].value, selectedRequestId
+        const request = requestForProjection(results[0].value, selectedRequestId
           ? results[0].value.find((item) => item.id === selectedRequestId)
           : results[0].value.find((item) => !["closed", "rejected", "cancelled"].includes(item.status)) ?? results[0].value[0]);
         if (!selectedRequestId || request) {
           setRequests(results[0].value);
           if (request) applyRequestProjection(request);
         }
-      }
-      if (results[1].status === "fulfilled") setProfile(results[1].value);
-      if (results[2].status === "fulfilled") setNotifications(results[2].value);
+        setRequestsStatus("ready");
+      } else if (requestGeneration === requestsFetchGeneration.current) setRequestsStatus("error");
+      if (results[1].status === "fulfilled") { setProfile(results[1].value); setProfileStatus("ready"); }
+      else setProfileStatus("error");
+      if (results[2].status === "fulfilled") { setNotifications(results[2].value); setNotificationsStatus("ready"); }
+      else setNotificationsStatus("error");
       if (results[3].status === "fulfilled") {
         setReviews(results[3].value);
         setReviewsStatus("ready");
       } else setReviewsStatus("error");
+      if (results[4].status === "fulfilled") {
+        setAvatarMarketplace(results[4].value);
+        setAvatarMarketplaceStatus("ready");
+      } else {
+        setAvatarMarketplace([]);
+        setAvatarMarketplaceStatus("error");
+      }
     };
     void refresh();
     const interval = window.setInterval(refresh, 15_000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [applyRequestProjection, dataMode, requestToProject]);
+  }, [applyRequestProjection, dataMode]);
+
+  useEffect(() => {
+    if (dataMode === "preview") return;
+    let active = true;
+    const source = new EventSource("/api/data/live?topics=notifications,requests,services", { withCredentials: true });
+    source.onopen = () => { if (active) setLiveDataConnection("online"); };
+    source.addEventListener("ready", () => { if (active) setLiveDataConnection("online"); });
+    source.addEventListener("notifications", (event) => {
+      if (!active) return;
+      try {
+        const payload = JSON.parse(event.data) as { notifications?: NotificationProjection[] };
+        if (Array.isArray(payload.notifications)) {
+          setNotifications(payload.notifications);
+          setNotificationsStatus("ready");
+        }
+        setLiveDataConnection("online");
+      } catch {
+        setLiveDataConnection("reconnecting");
+      }
+    });
+    source.addEventListener("requests", (event) => {
+      if (!active) return;
+      try {
+        const payload = JSON.parse(event.data) as { requests?: ServiceRequestSummary[] };
+        if (Array.isArray(payload.requests)) {
+          const selectedRequestId = activeRequestIdRef.current;
+          const request = requestForProjection(payload.requests, selectedRequestId
+            ? payload.requests.find((item) => item.id === selectedRequestId)
+            : payload.requests.find((item) => !["closed", "rejected", "cancelled"].includes(item.status)) ?? payload.requests[0]);
+          setRequests(payload.requests);
+          setRequestsStatus("ready");
+          if (request) applyRequestProjection(request);
+          if (request && (!request.location.mine || !request.location.theirs)) setSharedLocation(null);
+        }
+        setLiveDataConnection("online");
+      } catch {
+        setLiveDataConnection("reconnecting");
+      }
+    });
+    source.addEventListener("services", (event) => {
+      if (!active) return;
+      try {
+        const payload = JSON.parse(event.data) as { services?: BackendService[] };
+        if (Array.isArray(payload.services)) {
+          const next = normalizeServiceSnapshot(payload.services);
+          setServices(next);
+          setSelectedId((current) => next.some((service) => service.id === current) ? current : next[0]?.id);
+          setSurfaceMode("default");
+          setRecommendationRefreshKey((value) => value + 1);
+        }
+        setLiveDataConnection("online");
+      } catch {
+        setLiveDataConnection("reconnecting");
+      }
+    });
+    source.addEventListener("stream-error", () => { if (active) setLiveDataConnection("reconnecting"); });
+    source.onerror = () => { if (active) setLiveDataConnection("reconnecting"); };
+    return () => { active = false; source.close(); };
+  }, [applyRequestProjection, dataMode]);
+
+  function retryNotifications() {
+    if (dataMode === "preview") return;
+    setNotificationsStatus("loading");
+    void getNotifications()
+      .then((items) => { setNotifications(items); setNotificationsStatus("ready"); })
+      .catch(() => setNotificationsStatus("error"));
+  }
+
+  function toggleNotifications() {
+    const next = !notificationsOpen;
+    setNotificationsOpen(next);
+    if (next && dataMode === "live" && notifications.some((item) => !item.readAt)) {
+      void markNotificationsRead()
+        .then(() => setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() }))))
+        .catch(() => setDataError("Notifications could not be marked as read."));
+    }
+  }
 
   useEffect(() => {
     if (dataMode === "preview" || !activeRequestId || stage === "idle") return;
@@ -454,15 +605,37 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     window.addEventListener("keydown", onKeyDown);
     if (requestOpen) window.setTimeout(() => drawerCloseRef.current?.focus(), 0);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createOpen, notificationsOpen, requestOpen, settingsOpen, ratingBlocked]);
+  }, [createOpen, notificationsOpen, ratingBlocked, requestOpen, settingsOpen]);
 
   useEffect(() => {
     const shell = shellRef.current;
     if (!shell || (!ratingBlocked && !requestOpen && !createOpen && !settingsOpen)) return;
-    const background = Array.from(shell.children).filter((element) => ratingBlocked ? !element.classList.contains("rating-gate") : !element.classList.contains("drawer-layer"));
+    const background = Array.from(shell.children).filter((element) => ratingBlocked
+      ? !element.classList.contains("rating-gate")
+      : !element.classList.contains("drawer-layer"));
     background.forEach((element) => element.setAttribute("inert", ""));
     return () => background.forEach((element) => element.removeAttribute("inert"));
-  }, [createOpen, requestOpen, settingsOpen, ratingBlocked]);
+  }, [createOpen, ratingBlocked, requestOpen, settingsOpen]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(max-width: 700px)");
+    const update = () => setCompactViewport(query.matches);
+    update();
+    query.addEventListener?.("change", update);
+    return () => query.removeEventListener?.("change", update);
+  }, []);
+
+  useEffect(() => {
+    const map = mapStageRef.current;
+    if (!compactViewport || !map || typeof IntersectionObserver === "undefined") {
+      setMapInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => setMapInView(entry.intersectionRatio >= 0.5), { threshold: [0, 0.5] });
+    observer.observe(map);
+    return () => observer.disconnect();
+  }, [compactViewport]);
 
   function resetRequest() {
     setStage("idle");
@@ -521,7 +694,10 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
       return;
     }
     setSelectedId(id);
-    setPinOpen(true);
+    setMatchExplanation((current) => current?.serviceId === id ? current : null);
+    if (dataMode === "live" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+      void recordProductEvent({ name: "service_viewed", serviceId: id, metadata: { source: serverRecommendations[id] ? "profile" : "discovery", view: "service" } }).catch(() => undefined);
+    }
     if (dataMode === "preview" && id !== selectedId) clearActiveRequest();
   }
 
@@ -548,7 +724,7 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     if (requestGeneration !== requestsFetchGeneration.current) return;
     if (preferredId && activeRequestIdRef.current !== preferredId) return;
     const selectedRequestId = preferredId ?? activeRequestIdRef.current;
-    const request = requestToProject(next, selectedRequestId
+    const request = requestForProjection(next, selectedRequestId
       ? next.find((item) => item.id === selectedRequestId)
       : next.find((item) => !["closed", "rejected", "cancelled"].includes(item.status)) ?? next[0]);
     if (selectedRequestId && !request) return;
@@ -618,7 +794,8 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
       if (stage === "completion_pending") {
         setRequesterCompleted(true);
         if (providerCompleted) setStage("rating_pending");
-      } else transition("completion_pending");
+      }
+      else transition("completion_pending");
       return;
     }
     if (!activeRequestId) return;
@@ -628,7 +805,9 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
   function rateService() {
     if (!Number.isInteger(requesterRating) || requesterRating < 1 || requesterRating > 5 || actionBusy) return;
     if (dataMode === "preview") {
-      setRequests((items) => items.map((request) => request.id === activeRequestId ? { ...request, ratings: { ...request.ratings, mine: true } } : request));
+      setRequests((items) => items.map((request) => request.id === activeRequestId
+        ? { ...request, ratings: { ...request.ratings, mine: true } }
+        : request));
       setRatingComment("");
       setStage(otherRatingSubmitted ? "closed" : "rating_pending");
       setRequestOpen(false);
@@ -680,11 +859,95 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     return `https://www.google.com/maps/dir/?api=1&destination=${point[2]},${point[1]}&travelmode=${mode}`;
   }
 
+  async function runSmartDiscovery() {
+    const prompt = smartPrompt.trim();
+    setSmartError("");
+    if (!prompt) {
+      setSmartError("Describe what you need first.");
+      return;
+    }
+    if (dataMode === "live" && !smartConsent) {
+      setSmartError("Review the Gemini data preview and consent before sending.");
+      return;
+    }
+    if (dataMode === "preview") {
+      setQuery("calculus");
+      setCategory("Tutoring");
+      setSubcategory("Exam prep");
+      setMaxDistanceMiles(2);
+      setMinimumRating(4.5);
+      setAvailabilityWindow("today");
+      setListingFilter("temporary");
+      setSmartResult({ source: "preview", summary: "Tutoring · Exam prep · within 2 mi · 4.5+ · today" });
+      return;
+    }
+    setSmartBusy(true);
+    try {
+      const result = await interpretDiscovery(prompt);
+      const summary: string[] = [];
+      setQuery(result.query);
+      const resolvedCategory = result.listingKind === "permanent" ? "Businesses" : result.category;
+      const resolvedListingKind = resolvedCategory === "Businesses" ? "permanent" : result.listingKind;
+      const resolvedSubcategory = resolvedCategory && result.subcategory
+        && subcategoriesFor(resolvedCategory).some((item) => item.label === result.subcategory)
+        ? result.subcategory
+        : null;
+      if (resolvedCategory) { setCategory(resolvedCategory); summary.push(resolvedCategory); }
+      if (resolvedSubcategory) { setSubcategory(resolvedSubcategory); summary.push(resolvedSubcategory); }
+      else if (resolvedCategory) setSubcategory(undefined);
+      if (result.radiusMiles !== null) {
+        setMaxDistanceMiles(result.radiusMiles);
+        summary.push(`within ${result.radiusMiles} mi`);
+      }
+      if (result.minimumRating !== null) {
+        setMinimumRating(result.minimumRating);
+        summary.push(`${result.minimumRating}+ stars`);
+      }
+      if (result.availability) {
+        setAvailabilityWindow(result.availability);
+        if (result.availability !== "any") summary.push(result.availability.replaceAll("-", " "));
+      }
+      if (resolvedListingKind) {
+        setListingFilter(resolvedListingKind);
+        summary.push(resolvedListingKind === "temporary" ? "one-off" : resolvedListingKind === "permanent" ? "permanent pin" : "all listings");
+      }
+      setSmartResult({ source: result.source, summary: summary.length ? summary.join(" · ") : result.query || "Search wording refined" });
+      void recordProductEvent({ name: "filter_applied", metadata: { filter: "query", source: result.source === "gemini" ? "gemini" : "deterministic", view: "discover" } }).catch(() => undefined);
+    } catch (error) {
+      setSmartError(error instanceof Error ? error.message : "Smart discovery is unavailable.");
+    } finally {
+      setSmartBusy(false);
+    }
+  }
+
+  async function explainSelectedMatch() {
+    if (!selected || matchExplanationBusy) return;
+    if (matchExplanation?.serviceId === selected.id) {
+      setMatchExplanation(null);
+      return;
+    }
+    if (dataMode === "preview") {
+      setMatchExplanation({ serviceId: selected.id, text: selected.explanation, source: "preview" });
+      return;
+    }
+    setMatchExplanationBusy(true);
+    try {
+      const result = await explainServiceRecommendation(selected.id);
+      setMatchExplanation({ serviceId: selected.id, text: result.explanation, source: result.source });
+    } catch (error) {
+      setMatchExplanation({ serviceId: selected.id, text: selected.explanation, source: "deterministic-fallback" });
+      setDataError(error instanceof Error ? `${error.message} Showing the local match explanation instead.` : "Showing the local match explanation instead.");
+    } finally {
+      setMatchExplanationBusy(false);
+    }
+  }
+
   async function useWritingAssistant() {
     setAssistantError("");
     if (dataMode === "preview") {
       setServiceDraft({ title: "Calculus problem-set rescue", category: "Tutoring", subcategory: "Homework help", availability: "Today after 4:30 PM", description: "One focused session for the problem you are stuck on. We will work through it together.", price: "$18 / hour" });
       setAssistantSource("template");
+      setAssistantDetails({ explanation: "Matched the draft to tutoring and kept the scope focused on learning together.", tags: ["calculus", "homework help", "one-off"], riskFlags: [], priceNote: "Keep the suggested amount explicit and confirm it in chat.", availabilityNote: "The time window is specific enough for discovery." });
       setDraftReviewed(false);
       return;
     }
@@ -694,7 +957,12 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     }
     setAssistantBusy(true);
     try {
-      const suggestion = await suggestServiceDraft({ title: serviceDraft.title, description: serviceDraft.description });
+      const suggestion = await suggestServiceDraft({
+        title: serviceDraft.title,
+        description: serviceDraft.description,
+        availability: serviceDraft.availability,
+        price: serviceDraft.price,
+      });
       const suggestedCategory = isServiceCategory(suggestion.category)
         ? suggestion.category
         : SUGGESTED_CATEGORY_ALIASES[suggestion.category];
@@ -709,6 +977,7 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
           ?? (suggestedCategory ? subcategoriesFor(suggestedCategory)[0].label : current.subcategory),
       }));
       setAssistantSource(suggestion.source);
+      setAssistantDetails({ explanation: suggestion.explanation, tags: suggestion.tags, riskFlags: suggestion.riskFlags, priceNote: suggestion.suggestedPriceNote, availabilityNote: suggestion.availabilityNote });
       setDraftReviewed(false);
     } catch (error) {
       setAssistantError(error instanceof Error ? error.message : "Writing assistance is unavailable.");
@@ -762,7 +1031,7 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
   }
 
   function resetFilters() {
-    setQuery(""); setCategory("All"); setListingFilter("all"); setSubcategory(undefined); setMaxDistanceMiles(3); setMinimumRating(0); setAvailableNow(false);
+    setQuery(""); setCategory("All"); setListingFilter("all"); setSubcategory(undefined); setMaxDistanceMiles(3); setMinimumRating(0); setAvailabilityWindow("any");
   }
 
   function selectCategoryFilter(next: ServiceCategory | "All") {
@@ -770,27 +1039,38 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     setSubcategory(undefined);
     if (next === "Businesses") setListingFilter("permanent");
     else if (next !== "All" && listingFilter === "permanent") setListingFilter("temporary");
+    if (dataMode === "live" && next !== "All") {
+      void recordProductEvent({ name: "filter_applied", metadata: { filter: "category", category: next.toLocaleLowerCase(), source: "discovery", view: "discover" } }).catch(() => undefined);
+    }
   }
 
   return (
     <main ref={shellRef} className={`app-shell ${view === "requests" ? "messaging-shell" : ""}`} id="top">
-      {ratingBlocked && <RatingGate name={pendingRating?.otherParty.name ?? drawerService?.provider.name ?? "the other student"} value={requesterRating} onChange={setRequesterRating} onSubmit={rateService} busy={actionBusy || Boolean(pendingRating && pendingRating.id !== activeRequestId)} error={dataError} />}
+      {ratingBlocked && <RatingGate
+        name={pendingRating?.otherParty.name ?? drawerService?.provider.name ?? "the other student"}
+        value={requesterRating}
+        onChange={setRequesterRating}
+        onSubmit={rateService}
+        busy={actionBusy || Boolean(pendingRating && pendingRating.id !== activeRequestId)}
+        error={dataError}
+      />}
       <header className="topbar">
-        <a className="brand" href="#discover" aria-label="HitMeUp home" onClick={() => setView("discover")}><HitMeUpLogo size={40} /><span><strong>HitMeUp</strong></span></a>
+        <a className="brand" href="#discover" aria-label="HitMeUp home" onClick={() => setView("discover")}><HitMeUpLogo size={40} /><span><strong>HitMeUp</strong><small>Student exchange</small></span></a>
         <nav className="topnav" aria-label="Primary navigation">
           <button className={view === "discover" ? "active" : ""} type="button" onClick={() => setView("discover")}><Compass size={17} /> Discover</button>
           <button className={view === "requests" ? "active" : ""} type="button" onClick={() => setView("requests")}><MessageCircle size={17} /> Requests{(ratingBlocked || unreadCount > 0) && <b className="nav-alert">{unreadCount || 1}</b>}</button>
           <button className={view === "profile" ? "active" : ""} type="button" onClick={() => setView("profile")}><UserRound size={17} /> Profile</button>
+          <button className="mobile-notifications-button" type="button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={notificationsOpen} onClick={toggleNotifications}><Bell size={17} /> Notifications{unreadCount > 0 && <b className="nav-alert">{unreadCount}</b>}</button>
         </nav>
         <div className="top-actions">
+          {dataMode === "preview" && <span className="session-chip is-preview">Preview data</span>}
           <ThemeToggle />
-          <button className="icon-button" type="button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={notificationsOpen} onClick={() => { const next = !notificationsOpen; setNotificationsOpen(next); if (next && dataMode === "live" && notifications.some((item) => !item.readAt)) void markNotificationsRead().then(() => setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })))).catch(() => undefined); }}><Bell size={19} />{unreadCount > 0 && <span className="notification-dot" />}</button>
-          <button className="avatar" type="button" aria-label="Open profile" onClick={() => setView("profile")}><ProfileAvatarPicture /></button>
+          <button className="icon-button" type="button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={notificationsOpen} onClick={toggleNotifications}><Bell size={19} />{unreadCount > 0 && <span className="notification-dot" />}</button>
+          <button className="avatar" type="button" aria-label="Open profile" onClick={() => setView("profile")}><ProfileAvatarPicture profile={profile} marketplaceItems={avatarMarketplace} marketplaceStatus={avatarMarketplaceStatus} /></button>
         </div>
-        {notificationsOpen && <aside className="notification-popover" aria-label="Notifications"><div className="popover-heading"><span>Notifications</span><button type="button" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><X size={15} /></button></div>{notifications.length ? notifications.slice(0, 3).map((item) => <p key={item.id}><Bell size={16} /> {notificationCopy(item)}</p>) : <p><Bell size={16} /> You&apos;re all caught up. Request updates will appear here.</p>}<button className="text-button" type="button" onClick={() => { setNotificationsOpen(false); setView("requests"); }}>Open requests <ChevronRight size={15} /></button></aside>}
+        {notificationsOpen && <aside className="notification-popover" aria-label="Notifications"><div className="popover-heading"><span>Notifications <small className={`live-data-label live-${liveDataConnection}`}><i />{liveDataConnection === "preview" ? "Preview" : liveDataConnection === "online" ? "Live" : liveDataConnection === "connecting" ? "Connecting" : "Reconnecting"}</small></span><button type="button" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><X size={15} /></button></div>{notificationsStatus === "loading" ? <p role="status"><LoaderCircle className="spin" size={16} /> Loading notifications…</p> : notificationsStatus === "error" ? <p className="notification-error" role="alert"><TriangleAlert size={16} /> Notifications could not be loaded. <button type="button" onClick={retryNotifications}>Try again</button></p> : notifications.length ? notifications.slice(0, 3).map((item) => <p key={item.id}><Bell size={16} /> {notificationCopy(item)}</p>) : <p><Bell size={16} /> You&apos;re all caught up. Request updates will appear here.</p>}<button className="text-button" type="button" onClick={() => { setNotificationsOpen(false); setView("requests"); }}>Open requests <ChevronRight size={15} /></button></aside>}
       </header>
 
-      {ratingBlocked && <div className="blocking-banner" role="status"><Star size={16} fill="currentColor" /> Finish your required rating to start another service.<button type="button" onClick={openActiveRequest}>Open rating</button></div>}
       {dataError && <div className="blocking-banner data-error-banner" role="alert"><TriangleAlert size={16} /> {dataError}<button type="button" onClick={() => setDataError("")}>Dismiss</button></div>}
 
       {view === "discover" && <section className="discover-frame" id="discover">
@@ -804,49 +1084,57 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
             setSubcategory(undefined);
             if (next === "permanent") setCategory("Businesses");
             else if (category === "Businesses") setCategory("All");
+            if (dataMode === "live" && next !== "all") {
+              void recordProductEvent({ name: "filter_applied", metadata: { filter: next, source: "discovery", view: "discover" } }).catch(() => undefined);
+            }
           }}
         />
         <section className="workspace">
           <aside className="discovery-panel" aria-label="Discovery filters">
-            <div className="panel-intro"><p className="eyebrow">DISCOVER NEARBY</p><h1>{listingFilter === "permanent" ? "Local, for longer." : "What are you up for?"}</h1></div>
-            <label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search plans, help, or places" aria-label="Search listings" /></label>
-            {!selectedCategoryDefinition && <div className="subcategory-grid search-presets" role="group" aria-label="Search presets">
-              {CATEGORY_CATALOG.map((item) => <button key={item.id} type="button" onClick={() => selectCategoryFilter(item.id)} style={{ "--category-accent": item.accent } as CSSProperties}><ServiceGlyph name={item.icon} size={16} /><span>{item.shortLabel}</span></button>)}
-            </div>}
+            <div className="panel-intro"><p className="eyebrow">DISCOVER NEARBY</p><h1>{listingFilter === "permanent" ? "Local, for longer." : "What are you up for?"}</h1><p className="lede">Plans, help, work, and useful places—organized by what you need now.</p></div>
+            <label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search plans, help, or places" aria-label="Search listings" /><kbd>⌘ K</kbd></label>
+            <section className="smart-discovery" aria-labelledby="smart-discovery-title">
+              <div className="smart-discovery-heading"><span className="gemini-mark"><Sparkles size={15} /></span><div><strong id="smart-discovery-title">Gemini search</strong><small>Turn one sentence into map filters.</small></div></div>
+              <div className="smart-discovery-compose"><input value={smartPrompt} maxLength={500} onChange={(event) => { setSmartPrompt(event.target.value); setSmartResult(null); }} onKeyDown={(event) => { if (event.key === "Enter") void runSmartDiscovery(); }} placeholder="e.g. Calculus help within 2 miles, 4.5+, today" aria-label="Describe what you need for Gemini" /><button type="button" disabled={smartBusy || !smartPrompt.trim() || (dataMode === "live" && !smartConsent)} onClick={() => void runSmartDiscovery()}>{smartBusy ? <LoaderCircle className="spin" size={15} /> : <Navigation size={15} />}<span>{smartBusy ? "Thinking" : "Apply"}</span></button></div>
+              {smartError && <p className="smart-error" role="alert"><TriangleAlert size={14} /> {smartError}</p>}
+              {smartResult && <div className="smart-result" role="status"><span>{smartResult.source === "gemini" ? "Gemini" : smartResult.source === "preview" ? "Preview" : "Private fallback"}</span><p>{smartResult.summary}</p><button type="button" onClick={() => { setSmartResult(null); resetFilters(); }}>Clear</button></div>}
+              {dataMode === "live" ? <><details className="gemini-data-preview"><summary>What Gemini receives</summary><p>{smartPrompt.trim() || "Your search text"}</p></details><label className="gemini-consent" title="Do not include names, addresses, phone numbers, or private chat."><input type="checkbox" checked={smartConsent} onChange={(event) => setSmartConsent(event.target.checked)} /><span>Send this text to Gemini.</span></label></> : <p className="smart-privacy"><ShieldCheck size={13} /> Local preview · Gemini is not contacted.</p>}
+            </section>
             {selectedCategoryDefinition && <section className="category-focus" style={{ "--category-accent": selectedCategoryDefinition.accent } as CSSProperties}>
-              <button className="back-button category-back" type="button" onClick={() => selectCategoryFilter("All")}><ArrowLeft size={14} /> Back to categories</button>
               <div className="category-focus-title"><span><ServiceGlyph name={selectedCategoryDefinition.icon} /></span><div><strong>{selectedCategoryDefinition.label}</strong><p>{selectedCategoryDefinition.description}</p></div></div>
               <div className="subcategory-grid" role="group" aria-label={`${selectedCategoryDefinition.label} subcategories`}>
                 {availableSubcategories.map((item) => <button key={item.label} className={subcategory === item.label ? "selected" : ""} type="button" aria-pressed={subcategory === item.label} onClick={() => setSubcategory((current) => current === item.label ? undefined : item.label)}><ServiceGlyph name={item.icon} size={16} /><span>{item.label}</span></button>)}
               </div>
             </section>}
             <div className="filter-heading"><span>Fine tune</span><Filter size={15} /></div>
-            <div className="filter-controls"><label><span>Within</span><select value={maxDistanceMiles} onChange={(event) => setMaxDistanceMiles(Number(event.target.value))}><option value={1}>1 mile</option><option value={2}>2 miles</option><option value={3}>3 miles</option></select></label><label><span>Rating</span><select value={minimumRating} onChange={(event) => setMinimumRating(Number(event.target.value))}><option value={0}>Any rating</option><option value={4.5}>4.5+ stars</option><option value={4.8}>4.8+ stars</option></select></label><label className="check-row"><input type="checkbox" checked={availableNow} onChange={(event) => setAvailableNow(event.target.checked)} /><span>Available now</span></label></div>
+            <div className="filter-controls"><label><span>Within</span><select value={maxDistanceMiles} onChange={(event) => { setMaxDistanceMiles(Number(event.target.value)); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "distance", source: "discovery", view: "discover" } }).catch(() => undefined); }}>{![1, 2, 3, 5, 10].includes(maxDistanceMiles) && <option value={maxDistanceMiles}>{maxDistanceMiles} miles</option>}<option value={1}>1 mile</option><option value={2}>2 miles</option><option value={3}>3 miles</option><option value={5}>5 miles</option><option value={10}>10 miles</option></select></label><label><span>Rating</span><select value={minimumRating} onChange={(event) => { setMinimumRating(Number(event.target.value)); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "rating", source: "discovery", view: "discover" } }).catch(() => undefined); }}>{![0, 4, 4.5, 4.8].includes(minimumRating) && <option value={minimumRating}>{minimumRating}+ stars</option>}<option value={0}>Any rating</option><option value={4}>4.0+ stars</option><option value={4.5}>4.5+ stars</option><option value={4.8}>4.8+ stars</option></select></label><label><span>When</span><select value={availabilityWindow} onChange={(event) => { setAvailabilityWindow(event.target.value as "any" | "now" | "today" | "this-week"); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "availability", source: "discovery", view: "discover" } }).catch(() => undefined); }}><option value="any">Any time</option><option value="now">Available now</option><option value="today">Today</option><option value="this-week">This week</option></select></label></div>
+            <div className="privacy-note"><ShieldCheck size={19} /><div><strong>People stay approximate</strong><p>Exact meeting points unlock only after acceptance and mutual sharing.</p></div></div>
             <div className="create-actions">
-              <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => ratingBlocked ? openActiveRequest() : setCreateOpen(true)}><Plus size={17} /> {ratingBlocked ? "Rate before posting" : "Post a request"}</button>
+              <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => { if (ratingBlocked) openActiveRequest(); else { setDataError(""); setCreateOpen(true); } }}><Plus size={17} /> {ratingBlocked ? "Rate before posting" : "Post something temporary"}</button>
               <button className="business-button" type="button" onClick={() => setBusinessModal("sponsor")}><Store size={17} /><span><strong>List a business</strong><small>Permanent sponsored pin</small></span><ChevronRight size={16} /></button>
             </div>
             <div className="nearby-list" aria-label="Nearby listings">
               <div className="nearby-list-heading"><span>Nearby</span><small>{presentedServices.length} found</small></div>
-              {presentedServices.map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}>{service.provider.initials}</span><span><strong>{service.title}</strong><small>{service.listingKind === "permanent" ? "Permanent pin" : service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
+              {presentedServices.map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} aria-current={selected?.id === service.id ? "true" : undefined} aria-label={`${service.title}, ${service.distanceMiles.toFixed(1)} miles away`} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}><ServiceGlyph name={categoryDefinition(service.category).icon} size={17} /></span><span><strong>{service.title}</strong><small>{service.listingKind === "permanent" ? "Permanent pin" : service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
             </div>
           </aside>
-          <section className="map-stage" aria-label="Campus listings map">
-            {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={pinOpen ? selected?.id : undefined} recenterKey={recenterKey} onSelect={selectService} popupContent={pinOpen && selected ? <aside className="service-inspector floating-inspector" aria-label="Selected listing" onKeyDown={(event) => { if (event.key === "Escape") setPinOpen(false); }}><button className="listing-close" type="button" aria-label="Close listing" onClick={() => setPinOpen(false)}><X size={18} /></button><ServicePeek service={selected} onRequest={openSelectedRequest} onBusiness={() => setBusinessModal(selected)} requestDisabled={ratingBlocked} /></aside> : null} />}
-            <div className="map-status"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"}</div>
+          <section ref={mapStageRef} className="map-stage" aria-label="Campus listings map">
+            {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={selected?.id} recenterKey={recenterKey} onSelect={selectService} popupContent={selected ? <MapListingPopup service={selected} requestDisabled={ratingBlocked} onAction={selected.listingKind === "permanent" ? () => setBusinessModal(selected) : openSelectedRequest} /> : null} />}
+            <div className={`map-status live-${liveDataConnection}`} aria-live="polite"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"} · {liveDataConnection === "preview" ? "preview" : liveDataConnection === "online" ? "live" : liveDataConnection === "connecting" ? "connecting" : "reconnecting"}</div>
             <button className="locate-button" type="button" aria-label="Recenter map" onClick={() => setRecenterKey((value) => value + 1)}><LocateFixed size={17} /><span className="locate-label">Recenter</span></button>
             {surfaceMode !== "loading" && surfaceMode !== "offline" && !selected && <EmptyState onReset={() => { resetFilters(); setSurfaceMode("default"); }} />}
           </section>
-
+          {selected && (!compactViewport || mapInView) && <aside className="service-inspector" aria-label="Selected listing"><ServicePeek service={selected} onRequest={openSelectedRequest} onBusiness={() => setBusinessModal(selected)} requestDisabled={ratingBlocked} requiresGeminiConsent={dataMode === "live"} onExplain={() => void explainSelectedMatch()} explanation={matchExplanation?.serviceId === selected.id ? matchExplanation : null} explanationBusy={matchExplanationBusy} personalized={preferredCategories.includes(selected.category)} /></aside>}
         </section>
       </section>}
 
-      {view === "requests" && <RequestsView requests={requests} onBack={() => setView("discover")} onOpen={(request) => { applyRequestProjection(request); setRequestOpen(true); }} />}
-      {view === "profile" && <ProfileView profile={profile} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} previewMode={dataMode === "preview"} onProfileChange={setProfile} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
+      {view === "requests" && <RequestsView status={requestsStatus} requests={requests} onBack={() => setView("discover")} onOpen={(request) => { applyRequestProjection(request); if (dataMode === "live") setChatConnection("connecting"); setRequestOpen(true); }} />}
+      {view === "profile" && <ProfileView profile={profile} profileStatus={profileStatus} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} previewMode={dataMode === "preview"} marketplaceItems={avatarMarketplace} marketplaceStatus={avatarMarketplaceStatus} onProfileChange={setProfile} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
+      <footer className="trust-strip"><span><BadgeCheck size={16} /> Student email required</span><span><LockKeyhole size={16} /> Mutual location consent</span><span><CircleDollarSign size={16} /> Pay face-to-face</span></footer>
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
-      {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
+      {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} assistantDetails={assistantDetails} submitError={dataError} submitting={actionBusy} requiresGeminiConsent={dataMode === "live"} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
       {businessModal && <BusinessPinModal service={businessModal === "sponsor" ? undefined : businessModal} onClose={() => setBusinessModal(null)} />}
-      {settingsOpen && <SettingsModal requests={requests} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </main>
   );
 }
@@ -865,62 +1153,113 @@ function CategoryRail({ activeCategory, listingFilter, services, onCategory, onL
   </div>;
 }
 
-function ServicePeek({ service, onRequest, onBusiness, requestDisabled }: { service: Service; onRequest: () => void; onBusiness: () => void; requestDisabled: boolean }) {
+function MapListingPopup({ service, requestDisabled, onAction }: { service: RankedService; requestDisabled: boolean; onAction: () => void }) {
+  const permanent = service.listingKind === "permanent";
+  return <article className="map-listing-summary" aria-label={`${service.title} listing summary`}>
+    <span className="map-listing-category"><ServiceGlyph name={categoryDefinition(service.category).icon} size={14} /> {categoryDefinition(service.category).label}</span>
+    <strong>{service.title}</strong>
+    <p><span><MapPin size={12} aria-hidden="true" /> {service.distanceMiles.toFixed(1)} mi</span><b>{service.price}</b></p>
+    <button type="button" disabled={!permanent && requestDisabled} onClick={onAction}>{!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Request help"}<ChevronRight size={14} aria-hidden="true" /></button>
+  </article>;
+}
+
+function ServicePeek({
+  service,
+  onRequest,
+  onBusiness,
+  requestDisabled,
+  requiresGeminiConsent,
+  onExplain,
+  explanation,
+  explanationBusy,
+  personalized,
+}: {
+  service: RankedService;
+  onRequest: () => void;
+  onBusiness: () => void;
+  requestDisabled: boolean;
+  requiresGeminiConsent: boolean;
+  onExplain: () => void;
+  explanation: { text: string; source: "gemini" | "deterministic-fallback" | "preview" } | null;
+  explanationBusy: boolean;
+  personalized: boolean;
+}) {
+  const [explainConsent, setExplainConsent] = useState(false);
   const permanent = service.listingKind === "permanent";
   const definition = categoryDefinition(service.category);
-  return (
-    <article className={`service-peek ${permanent ? "is-permanent" : "is-temporary"}`}>
-      <div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div>
-      <div className="service-peek-mark" style={{ background: service.accent }}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- avatar URLs are user data, not static assets */}
-        {service.provider.avatarUrl ? <img className="provider-avatar-image" src={service.provider.avatarUrl} alt={`${service.provider.name}'s avatar`} /> : <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" role="img" aria-label={`${service.provider.name}'s avatar placeholder`}><circle cx="12" cy="8" r="4" /><path d="M4 22v-3a8 8 0 0 1 16 0v3" /></svg>}
-      </div>
-      <div className="service-peek-main">
+  return <article className={`service-peek ${permanent ? "is-permanent" : "is-temporary"}`}>
+    <div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div>
+    <div className="service-peek-mark" style={{ background: service.accent }}><ServiceGlyph name={definition.icon} size={22} /><span>{service.provider.initials}</span></div>
+    <div className="service-peek-main">
       <div className="service-peek-top"><span>{definition.label}</span><span><MapPin size={13} /> {service.distanceMiles.toFixed(1)} mi</span></div>
-      <div className={`listing-badge ${permanent ? "permanent" : "temporary"}`}>{permanent ? <><Store size={13} /> Sponsored · permanent</> : <><Clock3 size={13} /> Temporary request</>}</div>
+      <div className={`listing-badge ${permanent ? "permanent" : "temporary"}`}>{permanent ? <><Store size={13} /> Sponsored · permanent</> : <><Clock3 size={13} /> Temporary</>}</div>
       <h2>{service.title}</h2>
       <p>{service.description}</p>
       {service.subcategory && <div className="subcategory-label"><ServiceGlyph name={definition.subcategories.find((item) => item.label === service.subcategory)?.icon ?? definition.icon} size={14} /> {service.subcategory}</div>}
       <div className="service-tags">{service.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
       <div className="provider-line"><strong>{service.provider.name}</strong>{service.provider.verified && <BadgeCheck size={14} />}{service.provider.ratingCount > 0 && <span><Star size={13} fill="currentColor" /> {service.provider.rating} ({service.provider.ratingCount})</span>}</div>
-      <div className="inspector-fact"><Clock3 size={15} /><span><small>{permanent ? "Hours" : "When"}</small><strong>{service.availability}</strong></span></div>
+      <div className="inspector-fact"><Clock3 size={15} /><span><small>{permanent ? "Hours" : "Availability"}</small><strong>{service.availability}</strong></span></div>
       <div className="inspector-fact"><ShieldCheck size={15} /><span><small>Location</small><strong>{permanent ? "Public only after business review" : "Approximate zone until mutual consent"}</strong></span></div>
-      </div>
-      <div className="service-peek-action"><strong>{service.price}</strong><button type="button" onClick={permanent ? onBusiness : onRequest} disabled={!permanent && requestDisabled}>
-        {!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Volunteer to help"}<ChevronRight size={16} />
-      </button></div>
-    </article>
-  );
+      {requiresGeminiConsent && !explanation && <label className="gemini-consent compact-consent" title="Shares the public listing and your approved interest tags, never private chat or exact location."><input type="checkbox" checked={explainConsent} onChange={(event) => setExplainConsent(event.target.checked)} /><span>Use Gemini for this match.</span></label>}
+      <button className="match-explain-toggle" type="button" onClick={onExplain} disabled={explanationBusy || (requiresGeminiConsent && !explainConsent)}>{explanationBusy ? <LoaderCircle className="spin" size={14} /> : <Sparkles size={14} />} {explanation ? "Hide match reason" : personalized ? "Why this is for you" : "Why this match"}</button>
+      {explanation && <div className="match-explanation" role="status"><span>{explanation.source === "gemini" ? "GEMINI EXPLANATION" : explanation.source === "preview" ? "PREVIEW EXPLANATION" : "PRIVATE FALLBACK"}</span><p>{explanation.text}</p><small>Uses only public listing signals and your approved profile interests.</small></div>}
+    </div>
+    <div className="service-peek-action"><strong>{service.price}</strong><button type="button" onClick={permanent ? onBusiness : onRequest} disabled={!permanent && requestDisabled}>{!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Request help"}<ChevronRight size={16} /></button></div>
+  </article>;
 }
 
 function EmptyState({ onReset }: { onReset: () => void }) {
   return <div className="empty-state"><span className="empty-icon"><Search size={22} /></span><h2>Nothing matches yet.</h2><p>Try another category, widen the radius, or remove a filter.</p><button className="secondary-button" type="button" onClick={onReset}>Reset filters</button></div>;
 }
 
-function RequestsView({ requests, onBack, onOpen }: { requests: ServiceRequestSummary[]; onBack: () => void; onOpen: (request: ServiceRequestSummary) => void }) {
+function RequestsView({ status, requests, onBack, onOpen }: { status: "loading" | "ready" | "error"; requests: ServiceRequestSummary[]; onBack: () => void; onOpen: (request: ServiceRequestSummary) => void }) {
   const [tab, setTab] = useState<"active" | "history">("active");
   const [search, setSearch] = useState("");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const isHistory = (request: ServiceRequestSummary) => ["closed", "rejected", "cancelled"].includes(request.status);
-  const visible = requests.filter((request) => isHistory(request) === (tab === "history"))
-    .filter((request) => `${request.otherParty.name} ${request.service.title}`.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const activeCount = requests.filter((request) => !isHistory(request)).length;
+  const historyCount = requests.length - activeCount;
+  const visible = requests
+    .filter((request) => isHistory(request) === (tab === "history"))
+    .filter((request) => `${request.otherParty.name} ${request.service.title} ${STAGE_LABEL[request.status]}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+
+  function selectTab(next: "active" | "history") {
+    setTab(next);
+    window.requestAnimationFrame(() => tabRefs.current[next === "active" ? 0 : 1]?.focus());
+  }
+
+  function handleTabKey(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home" || event.key === "ArrowLeft") selectTab("active");
+    else selectTab("history");
+  }
+
   return (
-    <section className="inbox-page" aria-label="Messages and requests">
-      <header className="inbox-header"><h1>Messages</h1><button className="text-button" type="button" onClick={onBack}>Discover <ArrowRight size={16} /></button></header>
-      <div className="inbox-tools">
-        <div className="request-tabs" role="group" aria-label="Request groups">
-          <button type="button" aria-pressed={tab === "active"} onClick={() => setTab("active")}>Active <span>{requests.filter((request) => !isHistory(request)).length}</span></button>
-          <button type="button" aria-pressed={tab === "history"} onClick={() => setTab("history")}>History <span>{requests.filter(isHistory).length}</span></button>
+    <section className="secondary-view requests-view inbox-page" aria-labelledby="requests-heading">
+      <div className="secondary-inner inbox-inner">
+        <div className="inbox-header">
+          <div><button className="back-button" type="button" onClick={onBack}><ArrowLeft size={16} /> Discover</button><p className="eyebrow">PRIVATE INBOX</p><h1 id="requests-heading">Messages & requests</h1><p className="secondary-lede">Every conversation stays tied to one service and its next step.</p></div>
+          <div className="inbox-summary" aria-label={`${activeCount} active and ${historyCount} past requests`}><span><strong>{activeCount}</strong> Active</span><span><strong>{historyCount}</strong> History</span></div>
         </div>
-        <label className="inbox-search"><Search size={17} /><input aria-label="Search conversations" placeholder="Search conversations" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-      </div>
-      <div className="conversation-list">
-        {visible.map((request) => <button className="conversation-row" type="button" key={request.id} onClick={() => onOpen(request)}>
-          <span className="conversation-avatar">{request.otherParty.initials}</span>
-          <span className="conversation-copy"><strong>{request.otherParty.name}</strong><span>{request.service.title}</span><small>{STAGE_LABEL[request.status]}</small></span>
-          <span className="conversation-meta"><time dateTime={request.createdAt}>{new Date(request.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time><ChevronRight size={18} /></span>
+        <div className="inbox-tools">
+          <div className="request-tabs" role="tablist" aria-label="Request groups">
+            <button ref={(node) => { tabRefs.current[0] = node; }} id="requests-active-tab" role="tab" type="button" aria-selected={tab === "active"} aria-controls="requests-panel" tabIndex={tab === "active" ? 0 : -1} onKeyDown={handleTabKey} onClick={() => setTab("active")}>Active <span>{activeCount}</span></button>
+            <button ref={(node) => { tabRefs.current[1] = node; }} id="requests-history-tab" role="tab" type="button" aria-selected={tab === "history"} aria-controls="requests-panel" tabIndex={tab === "history" ? 0 : -1} onKeyDown={handleTabKey} onClick={() => setTab("history")}>History <span>{historyCount}</span></button>
+          </div>
+          <label className="inbox-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search conversations</span><input type="search" aria-label="Search conversations" placeholder="Search people or services" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+        </div>
+        <div className="conversation-list" id="requests-panel" role="tabpanel" tabIndex={0} aria-labelledby={tab === "active" ? "requests-active-tab" : "requests-history-tab"}>
+        {status === "loading" && <div className="empty-wide" role="status"><LoaderCircle className="spin" size={22} /><strong>Loading requests…</strong><p>Checking your private service activity.</p></div>}
+        {status === "error" && <div className="empty-wide is-error" role="alert"><TriangleAlert size={22} /><strong>Requests could not be loaded.</strong><p>Your service data is still private. Refresh and try again.</p><button className="secondary-button" type="button" onClick={() => window.location.reload()}>Retry</button></div>}
+        {status === "ready" && visible.map((request) => <button className={`conversation-row ${isHistory(request) ? "is-history" : "is-active"}`} type="button" key={request.id} onClick={() => onOpen(request)} aria-label={`Open ${request.service.title} with ${request.otherParty.name}, ${STAGE_LABEL[request.status]}`}>
+          <span className="conversation-avatar" aria-hidden="true">{request.otherParty.initials}</span>
+          <span className="conversation-copy"><strong>{request.otherParty.name}</strong><span>{request.service.title}</span><small><i className={`request-stage-dot stage-${request.status}`} />{request.role === "provider" ? "You are helping" : "You requested help"} · {STAGE_LABEL[request.status]}</small></span>
+          <span className="conversation-meta"><time dateTime={request.createdAt}>{new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(request.createdAt))}</time><ChevronRight size={18} /></span>
         </button>)}
-        {!visible.length && <div className="inbox-empty"><MessageCircle size={30} /><h2>{search ? "No matching conversations" : tab === "active" ? "No conversations yet" : "No past conversations"}</h2>{!search && tab === "active" && <button className="secondary-button" type="button" onClick={onBack}>Explore requests</button>}</div>}
+        {status === "ready" && !visible.length && <div className="empty-wide inbox-empty"><MessageCircle size={24} /><strong>{search ? "No matching conversations." : tab === "active" ? "No active requests." : "No service history yet."}</strong><p>{search ? "Try a person, service, or status." : tab === "active" ? "Choose a service on the map to start a private conversation." : "Completed and cancelled services will appear here."}</p>{!search && tab === "active" && <button className="secondary-button" type="button" onClick={onBack}>Find a service</button>}</div>}
+        </div>
       </div>
     </section>
   );
@@ -932,7 +1271,7 @@ function formatProfileDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-export function ProfileView({ profile, requests, reviews, reviewsStatus, previewMode, onProfileChange, onBack, onSettings }: { profile: ProfileProjection | null; requests: ServiceRequestSummary[]; reviews: ProfileReview[]; reviewsStatus: "loading" | "ready" | "error"; previewMode: boolean; onProfileChange: (profile: ProfileProjection | null) => void; onBack: () => void; onSettings: () => void }) {
+export function ProfileView({ profile, profileStatus = "ready", requests, reviews, reviewsStatus, previewMode, marketplaceItems, marketplaceStatus = previewMode ? "preview" : "ready", onProfileChange, onBack, onSettings }: { profile: ProfileProjection | null; profileStatus?: "loading" | "ready" | "error"; requests: ServiceRequestSummary[]; reviews: ProfileReview[]; reviewsStatus: "loading" | "ready" | "error"; previewMode: boolean; marketplaceItems?: readonly AvatarMarketplaceProjection[]; marketplaceStatus?: "loading" | "ready" | "error" | "preview"; onProfileChange: (profile: ProfileProjection | null) => void; onBack: () => void; onSettings: () => void }) {
   const displayName = profile?.displayName || "Your profile";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ displayName: "", bio: "", interests: "" });
@@ -981,12 +1320,15 @@ export function ProfileView({ profile, requests, reviews, reviewsStatus, preview
     <section className="secondary-view profile-view">
       <div className="secondary-inner wide-inner">
         <button className="back-button" type="button" onClick={onBack}><ArrowLeft size={16} /> Discover</button>
-
         <div className="profile-heading profile-identity-heading">
-          <ProfileAvatarLink previewMode={previewMode} />
-          <div className="profile-title-block"><p className="eyebrow">YOUR PROFILE</p><div className="profile-name-line"><h1>{displayName}</h1>{profile && <span className="verified-profile-badge"><BadgeCheck size={14} /> University verified</span>}</div><p className="secondary-lede">{profile?.eduDomain ? `Verified through ${profile.eduDomain}` : "Loading your verified profile…"}</p></div>
-          <div className="profile-heading-actions"><button className="secondary-button" type="button" disabled={!profile} onClick={beginEdit}><Pencil size={15} /> Edit profile</button><button className="secondary-button" type="button" onClick={onSettings}><Settings2 size={15} /> Settings</button></div>
+          <ProfileAvatarLink profile={profile} previewMode={previewMode} marketplaceItems={marketplaceItems} marketplaceStatus={marketplaceStatus} />
+          <div className="profile-title-block"><p className="eyebrow">YOUR PROFILE</p><div className="profile-name-line"><h1>{displayName}</h1>{profile && <span className="verified-profile-badge"><BadgeCheck size={14} /> University verified</span>}</div><p className="secondary-lede">{profileStatus === "loading" ? "Loading your verified profile…" : profileStatus === "error" ? "Your profile could not be loaded." : profile?.eduDomain ? `Verified through ${profile.eduDomain}` : "Your profile is ready to customize."}</p></div>
+          <div className="profile-heading-actions"><button className="secondary-button" type="button" disabled={!profile || profileStatus !== "ready"} onClick={beginEdit}><Pencil size={15} /> Edit profile</button><button className="secondary-button" type="button" onClick={onSettings}><Settings2 size={15} /> Privacy & safety</button></div>
         </div>
+
+        {profileStatus === "loading" && <div className="profile-load-state" role="status"><LoaderCircle className="spin" size={17} /> Loading profile details…</div>}
+        {profileStatus === "error" && <div className="profile-load-state is-error" role="alert"><TriangleAlert size={17} /> Profile details could not be loaded. Refresh and try again.</div>}
+        {marketplaceStatus === "error" && <div className="profile-load-state is-error" role="alert"><TriangleAlert size={17} /> Your saved Laura avatar could not be loaded. No default look is being shown as your server loadout.</div>}
 
         <div className="profile-stats" aria-label="Profile stats">
           <div><strong>{profile?.completedCount ?? "—"}</strong><span>Completed</span></div>
@@ -1005,7 +1347,7 @@ export function ProfileView({ profile, requests, reviews, reviewsStatus, preview
         {saveStatus === "saved" && <p className="profile-save-status" role="status">{previewMode ? "Updated in this local preview only." : "Profile updated."}</p>}
         {saveStatus === "error" && <p className="profile-save-status is-error" role="alert">The profile could not be saved. Your previous details are unchanged.</p>}
 
-        <div className="profile-experience-grid">
+        <div className="profile-experience-grid" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
           <div className="profile-main-column">
             <section className="profile-card profile-about">
               <div className="section-heading"><div><span className="section-kicker">ABOUT</span><h2>A little context.</h2></div></div>
@@ -1028,7 +1370,6 @@ export function ProfileView({ profile, requests, reviews, reviewsStatus, preview
           </div>
 
         </div>
-
       </div>
     </section>
   );
@@ -1072,7 +1413,7 @@ function RequestDrawer({ selected, stage, role, setStage, onBeginRequest, onAcce
 
         <div className="request-summary">
           <div className="provider-avatar" style={{ background: selected.accent }}>{selected.provider.initials}</div>
-          <div><strong>{selected.provider.name}</strong><span><Star size={13} fill="currentColor" /> {selected.provider.ratingCount ? `${selected.provider.rating} · ${selected.provider.completed} completed` : "New member"}</span></div>
+          <div><strong>{selected.provider.name}</strong><span><Star size={13} fill="currentColor" /> {selected.provider.ratingCount ? `${selected.provider.rating} · ${selected.provider.completed} completed` : "New provider"}</span></div>
           <span className={`stage-pill stage-${stage}`}>{STAGE_LABEL[stage]}</span>
         </div>
 
@@ -1081,8 +1422,8 @@ function RequestDrawer({ selected, stage, role, setStage, onBeginRequest, onAcce
             <div><Clock3 size={18} /><span><strong>{selected.availability}</strong><small>Propose a time in your first message.</small></span></div>
             <div><MapPin size={18} /><span><strong>Approximate area only</strong><small>No exact point is delivered to discovery.</small></span></div>
             <div><CircleDollarSign size={18} /><span><strong>{selected.price}</strong><small>Payment happens directly between students.</small></span></div>
-            <label className="request-message-label">How can you help?<textarea rows={3} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Hi! I can help with this. Here is when I am available…" /></label>
-            <button className="primary-action" type="button" disabled={actionBusy} onClick={onBeginRequest}>{actionBusy ? "Sending…" : "Volunteer to help"} <Send size={16} /></button>
+            <label className="request-message-label">What do you need?<textarea rows={3} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={`Hi! Is ${selected.availability.toLowerCase()} still open?`} /></label>
+            <button className="primary-action" type="button" disabled={actionBusy} onClick={onBeginRequest}>{actionBusy ? "Sending…" : "Send request"} <Send size={16} /></button>
           </section>
         )}
 
@@ -1090,7 +1431,7 @@ function RequestDrawer({ selected, stage, role, setStage, onBeginRequest, onAcce
           <section className="drawer-section chat-section">
             <div className="section-title"><span>PRIVATE CHAT</span><small className={`chat-presence chat-${chatConnection}`}><i />{chatConnection === "preview" ? "Preview" : chatConnection === "online" ? "Live" : chatConnection === "connecting" ? "Connecting" : "Reconnecting"}</small></div>
             <div className="messages" aria-live="polite" onScroll={(event) => { const element = event.currentTarget; const bottom = element.scrollHeight - element.scrollTop - element.clientHeight < 28; setAtChatBottom(bottom); if (bottom) setNewMessageCount(0); }}>
-              {messagesLoading && !messages.length ? <div className="chat-loading" role="status"><span className="map-loading-mark" /> Loading conversation…</div> : chatError && !messages.length ? <div className="chat-error" role="alert"><TriangleAlert size={17} /><span>{chatError}</span><button type="button" onClick={onRetryMessages}>Try again</button></div> : messages.length ? messages.map((item) => <div className={`message-line ${item.isMine ? "mine" : "theirs"}`} key={item.id}><span className="chat-avatar">{item.isMine ? "YOU" : selected.provider.initials}</span><div><p>{item.body}</p><time dateTime={item.createdAt}>{formatMessageTime(item.createdAt)}</time></div></div>) : <p className="empty-chat">{chatAvailable ? "No messages yet. Say hello to start the conversation." : "No messages in this conversation."}</p>}
+              {messagesLoading && !messages.length ? <div className="chat-loading" role="status"><span className="map-loading-mark" /> Loading conversation…</div> : chatError && !messages.length ? <div className="chat-error" role="alert"><TriangleAlert size={17} /><span>{chatError}</span><button type="button" onClick={onRetryMessages}>Try again</button></div> : messages.length ? messages.map((item) => <div className={`message-line ${item.isMine ? "mine" : "theirs"}`} key={item.id}><span className="chat-avatar">{item.isMine ? "YOU" : selected.provider.initials}</span><div><p>{item.body}</p><time dateTime={item.createdAt}>{formatMessageTime(item.createdAt)}</time></div></div>) : <p className="empty-chat">{chatAvailable ? "No messages yet. Start with the exact task and a proposed time." : "No messages in this conversation."}</p>}
               <div ref={messagesEndRef} aria-hidden="true" />
             </div>
             {newMessageCount > 0 && <button className="new-message-button" type="button" onClick={scrollToLatest}>{newMessageCount} new {newMessageCount === 1 ? "message" : "messages"} <ChevronRight size={14} /></button>}
@@ -1100,7 +1441,7 @@ function RequestDrawer({ selected, stage, role, setStage, onBeginRequest, onAcce
 
         {stage === "requested" && role === "requester" && (
           <>
-            <section className="drawer-section pending-state"><Clock3 size={20} /><div><strong>Waiting for the provider</strong><p>Your exact location is still private. You can cancel before acceptance.</p></div></section>
+            <section className="drawer-section pending-state"><Clock3 size={20} /><div><strong>Waiting for the provider</strong><p>The exact meeting point stays hidden. You can cancel before acceptance.</p></div></section>
             <button className="revoke-button request-cancel" type="button" disabled={actionBusy} onClick={onCancelRequest}>Cancel my request</button>
           </>
         )}
@@ -1115,13 +1456,13 @@ function RequestDrawer({ selected, stage, role, setStage, onBeginRequest, onAcce
         {["accepted", "meeting"].includes(stage) && (
           <section className="drawer-section location-section">
             <div className="section-title"><span>MEETING LOCATION</span><small>{exactLocationVisible ? "Mutually shared" : "Exact point hidden"}</small></div>
-            <label><input type="checkbox" checked={requesterShared} disabled={actionBusy} onChange={(event) => setRequesterShared(event.target.checked)} /><span>Share my exact location for this service</span></label>
-            <div className="participant-state"><span>{selected.provider.name}</span><strong>{providerShared ? "Sharing with you" : "Not sharing"}</strong></div>
+            <label><input type="checkbox" checked={requesterShared} disabled={actionBusy} onChange={(event) => setRequesterShared(event.target.checked)} /><span>Allow both participants to view this service&apos;s exact meeting point</span></label>
+            <div className="participant-state"><span>{selected.provider.name}</span><strong>{providerShared ? "Access allowed" : "Access not allowed"}</strong></div>
             <div className={`location-lock ${exactLocationVisible ? "unlocked" : ""}`}>{exactLocationVisible ? <Navigation size={19} /> : <LockKeyhole size={19} />}<div><strong>{exactLocationVisible ? "Private meeting point available" : "Waiting for both choices"}</strong><p>{exactLocationVisible ? "Visible only inside this active request. Sharing expires at completion." : "The discovery map stays approximate."}</p></div></div>
             {exactLocationVisible && (
               <>
                 <ExactDirections walkingUrl={walkingUrl} drivingUrl={drivingUrl} />
-                <button className="revoke-button" type="button" onClick={() => setRequesterShared(false)}>Stop sharing my location</button>
+                <button className="revoke-button" type="button" onClick={() => setRequesterShared(false)}>Revoke my access consent</button>
               </>
             )}
             {stage === "accepted" && <button className="primary-action" type="button" disabled={!exactLocationVisible || actionBusy} onClick={onStartMeeting}>Start the service</button>}
@@ -1151,7 +1492,7 @@ function RequestDrawer({ selected, stage, role, setStage, onBeginRequest, onAcce
           </section>
         )}
 
-        {["rejected", "cancelled"].includes(stage) && <section className="drawer-section terminal-section"><X size={24} /><h3>{stage === "rejected" ? "Request declined" : "Request cancelled"}</h3><p>No exact location was shared. You can return to discovery and choose another service.</p><button className="secondary-button" type="button" onClick={onClose}>Back to map</button></section>}
+        {["rejected", "cancelled"].includes(stage) && <section className="drawer-section terminal-section"><X size={24} /><h3>{stage === "rejected" ? "Request declined" : "Request cancelled"}</h3><p>No exact meeting-point access was granted. You can return to discovery and choose another service.</p><button className="secondary-button" type="button" onClick={onClose}>Back to map</button></section>}
         {stage === "closed" && <section className="drawer-section success-section"><span className="success-mark"><Check size={25} /></span><h3>Service complete</h3><p>Both ratings are complete. New service activity is unlocked.</p><button className="secondary-button" type="button" onClick={onClose}>Back to map</button></section>}
       </aside>
     </div>
@@ -1196,9 +1537,20 @@ function BusinessPinModal({ service, onClose }: { service?: Service; onClose: ()
 
 type ServiceDraft = { title: string; category: ServiceCategory; subcategory: string; availability: string; description: string; price: string };
 
-function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantBusy, assistantSource, assistantError, onAssistant, onSubmit, onClose }: { draft: ServiceDraft; setDraft: Dispatch<SetStateAction<ServiceDraft>>; reviewed: boolean; setReviewed: (value: boolean) => void; assistantBusy: boolean; assistantSource?: "gemini" | "deterministic-fallback" | "template"; assistantError: string; onAssistant: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onClose: () => void }) {
+function assistantRiskCopy(flag: string) {
+  const copy: Record<string, string> = {
+    "academic-integrity-review": "Academic-integrity review needed",
+    "payment-or-credential-safety-review": "Payment or credential safety review needed",
+    "prohibited-or-unsafe-content-review": "Potentially unsafe content needs review",
+    "personal-contact-info-review": "Remove personal contact information",
+  };
+  return copy[flag] ?? flag.replaceAll("-", " ");
+}
+
+export function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantBusy, assistantSource, assistantError, assistantDetails, submitError, submitting, requiresGeminiConsent, onAssistant, onSubmit, onClose }: { draft: ServiceDraft; setDraft: Dispatch<SetStateAction<ServiceDraft>>; reviewed: boolean; setReviewed: (value: boolean) => void; assistantBusy: boolean; assistantSource?: "gemini" | "deterministic-fallback" | "template"; assistantError: string; assistantDetails: { explanation: string; tags: string[]; riskFlags: string[]; priceNote: string; availabilityNote: string } | null; submitError: string; submitting: boolean; requiresGeminiConsent: boolean; onAssistant: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onClose: () => void }) {
   const [attempted, setAttempted] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [assistantConsent, setAssistantConsent] = useState(false);
   const dirty = Object.values(draft).some(Boolean);
   const valid = Boolean(draft.title.trim() && draft.description.trim() && draft.availability.trim() && reviewed);
 
@@ -1213,54 +1565,35 @@ function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantB
   return (
     <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) requestClose(); }}>
       <section className="create-modal" role="dialog" aria-modal="true" aria-labelledby="create-title" onKeyDown={trapDialogFocus}>
-        <div className="drawer-header"><div><span className="drawer-kicker">TEMPORARY REQUEST</span><h2 id="create-title">What do you need?</h2></div><button className="icon-button" type="button" aria-label="Close service form" autoFocus onClick={requestClose}><X size={19} /></button></div>
-        <p className="modal-copy">Post what you need. Nearby students can volunteer to help.</p>
+        <div className="drawer-header"><div><span className="drawer-kicker">ONE-OFF OFFER</span><h2 id="create-title">Make one useful thing findable.</h2></div><button className="icon-button" type="button" aria-label="Close service form" autoFocus onClick={requestClose}><X size={19} /></button></div>
+        <p className="modal-copy">This is not a permanent storefront. Availability and the exact task should stay specific.</p>
         <form className="service-form" onSubmit={(event) => { setAttempted(true); if (valid) onSubmit(event); else event.preventDefault(); }} noValidate>
-          <label>Title <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.title.trim()} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="I need help debugging my Python assignment" />{attempted && !draft.title.trim() && <small className="field-error">Describe what you need.</small>}</label>
+          <label>Title <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.title.trim()} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Debug one Python assignment" />{attempted && !draft.title.trim() && <small className="field-error">Add a concise service title.</small>}</label>
           <div className="form-row"><label>Category<select value={draft.category} onChange={(event) => { const next = event.target.value as ServiceCategory; setDraft((current) => ({ ...current, category: next, subcategory: subcategoriesFor(next)[0].label })); }}>{CATEGORY_CATALOG.filter((item) => item.listingKind === "temporary").map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Type<select value={draft.subcategory} onChange={(event) => setDraft((current) => ({ ...current, subcategory: event.target.value }))}>{subcategoriesFor(draft.category).map((item) => <option key={item.label}>{item.label}</option>)}</select></label></div>
-          <label>Your budget (optional)<input value={draft.price} onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Volunteer help or an agreed amount" /><small>Ask for volunteer help or set a budget.</small></label>
-          <label>Availability <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.availability.trim()} value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Today after 5 PM" />{attempted && !draft.availability.trim() && <small className="field-error">Say when you need help.</small>}</label>
-          <label>Description <span aria-hidden="true">*</span><textarea aria-invalid={attempted && !draft.description.trim()} rows={4} maxLength={320} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="What do you need help with?" />{attempted && !draft.description.trim() && <small className="field-error">Describe the task and its boundary.</small>}</label>
-          <div className="ai-helper"><div><Sparkles size={17} /><div><strong>{assistantSource === "gemini" ? "Gemini suggestion" : assistantSource === "deterministic-fallback" ? "Rule-based fallback" : assistantSource === "template" ? "Preview template" : "Writing assistant"}</strong><p>{assistantSource ? "Suggestion applied. Review every word before publishing." : "Refine the title and category without publishing automatically."}</p></div></div><button type="button" disabled={assistantBusy} onClick={onAssistant}>{assistantBusy ? "Reviewing…" : "Suggest"}</button></div>
+          <label>Suggested amount<input value={draft.price} onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Free or coordinate in chat" /><small>Temporary listings can be free or paid directly between participants.</small></label>
+          <label>Availability <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.availability.trim()} value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Today after 5 PM" />{attempted && !draft.availability.trim() && <small className="field-error">Say when this one-off offer is available.</small>}</label>
+          <label>Description <span aria-hidden="true">*</span><textarea aria-invalid={attempted && !draft.description.trim()} rows={4} maxLength={320} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="What will the other student get?" />{attempted && !draft.description.trim() && <small className="field-error">Describe the task and its boundary.</small>}</label>
+          <div className="ai-helper"><div><Sparkles size={17} /><div><strong>{assistantSource === "gemini" ? "Gemini suggestion" : assistantSource === "deterministic-fallback" ? "Rule-based fallback" : assistantSource === "template" ? "Preview template" : "Writing assistant"}</strong><p>{assistantSource ? "Suggestion applied. Review every word before publishing." : "Refine the title and category without publishing automatically."}</p></div></div><button type="button" disabled={assistantBusy || (requiresGeminiConsent && !assistantConsent)} onClick={onAssistant}>{assistantBusy ? "Reviewing…" : "Suggest"}</button></div>
+          {requiresGeminiConsent && <div className="gemini-assistant-consent"><details className="gemini-data-preview"><summary>What Gemini receives</summary><dl><div><dt>Title</dt><dd>{draft.title || "—"}</dd></div><div><dt>Description</dt><dd>{draft.description || "—"}</dd></div><div><dt>Availability</dt><dd>{draft.availability || "—"}</dd></div><div><dt>Amount</dt><dd>{draft.price || "—"}</dd></div></dl></details><label className="gemini-consent" title="Do not include names, addresses, phone numbers, or private chat."><input type="checkbox" checked={assistantConsent} onChange={(event) => setAssistantConsent(event.target.checked)} /><span>Send these fields to Gemini.</span></label></div>}
+          {assistantDetails && <section className={`assistant-review ${assistantDetails.riskFlags.length ? "has-risks" : "is-clear"}`} aria-label="Writing assistant review" aria-live="polite">
+            <div><strong>{assistantDetails.riskFlags.length ? "Review before publishing" : "Structured and ready to review"}</strong><p>{assistantDetails.explanation}</p></div>
+            {assistantDetails.tags.length > 0 && <div className="assistant-tags">{assistantDetails.tags.slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}</div>}
+            <ul><li>{assistantDetails.priceNote}</li><li>{assistantDetails.availabilityNote}</li>{assistantDetails.riskFlags.map((flag) => <li className="assistant-risk" key={flag}>{assistantRiskCopy(flag)}</li>)}</ul>
+          </section>}
           {assistantError && <p className="form-error" role="alert">{assistantError}</p>}
+          {submitError && <p className="form-error" role="alert">{submitError}</p>}
           <label className="review-check"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed the title, scope and availability.</span></label>
-          {attempted && !reviewed && <p className="form-error" role="alert">Review and confirm your request before publishing.</p>}
+          {attempted && !reviewed && <p className="form-error" role="alert">Review and confirm the offer before publishing.</p>}
           {confirmDiscard && <div className="discard-confirm" role="alert"><span>Discard this draft?</span><button type="button" onClick={onClose}>Discard</button><button type="button" onClick={() => setConfirmDiscard(false)}>Keep editing</button></div>}
-          <div className="modal-actions"><button className="secondary-button" type="button" onClick={requestClose}>Cancel</button><button className="primary-action" type="submit" disabled={!valid}>Post request <Plus size={16} /></button></div>
+          <div className="modal-actions"><button className="secondary-button" type="button" disabled={submitting} onClick={requestClose}>Cancel</button><button className="primary-action" type="submit" disabled={!valid || submitting}>{submitting ? "Publishing…" : "Publish offer"} <Plus size={16} /></button></div>
         </form>
       </section>
     </div>
   );
 }
 
-function SettingsModal({ onClose, requests }: { onClose: () => void; requests: ServiceRequestSummary[] }) {
+function SettingsModal({ onClose }: { onClose: () => void }) {
   const [reportOpen, setReportOpen] = useState(false);
-  const [reportRequest, setReportRequest] = useState("");
-  const [reportType, setReportType] = useState("Safety concern");
-  const [reportDetails, setReportDetails] = useState("");
-  const [draftOpened, setDraftOpened] = useState(false);
-  const [contactOpen, setContactOpen] = useState(false);
-  const contactButton = useRef<HTMLButtonElement>(null);
-  const contactClose = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (contactOpen) contactClose.current?.focus();
-  }, [contactOpen]);
-  function backToSettings() {
-    setContactOpen(false);
-    requestAnimationFrame(() => contactButton.current?.focus());
-  }
-  if (contactOpen) return (
-    <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) backToSettings(); }}>
-      <section className="settings-modal contact-modal" role="dialog" aria-modal="true" aria-labelledby="contact-title" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); backToSettings(); } else trapDialogFocus(event); }}>
-        <div className="drawer-header"><h2 id="contact-title">Contact us</h2><button ref={contactClose} className="icon-button" type="button" aria-label="Close contact window" onClick={backToSettings}><X size={19} /></button></div>
-        <div className="settings-list">
-          <div><span>Phone</span><a href="tel:+14696316840">(469) 631-6840</a></div>
-          <div><span>Email</span><a href="mailto:RAPHIERAPHX@GMAIL.COM" style={{ overflowWrap: "anywhere" }}>RAPHIERAPHX@GMAIL.COM</a></div>
-        </div>
-        <button className="back-button" type="button" onClick={backToSettings}><ArrowLeft size={16} /> Back to settings</button>
-      </section>
-    </div>
-  );
   return (
     <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
       <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onKeyDown={trapDialogFocus}>
@@ -1268,29 +1601,14 @@ function SettingsModal({ onClose, requests }: { onClose: () => void; requests: S
         <div className="settings-list">
           <div><span><BadgeCheck size={16} /> University verification</span><strong>Verified through Microsoft · public fields limited</strong></div>
           <div><span><LockKeyhole size={16} /> Discovery location</span><strong>Approximate service zones only</strong></div>
-          <div><span><Navigation size={16} /> Exact location</span><strong>Off until accepted + mutual opt-in · expires at completion</strong></div>
+          <div><span><Navigation size={16} /> Exact meeting point</span><strong>Hidden until accepted + mutual opt-in · access expires at completion</strong></div>
           <div><span><Bell size={16} /> Notifications</span><strong>Requests, messages and service updates</strong></div>
         </div>
         <div className="safety-actions">
-          <button ref={contactButton} type="button" onClick={() => setContactOpen(true)}>Contact us <ChevronRight size={15} /></button>
           <button type="button" onClick={() => setReportOpen(!reportOpen)}>Report a safety issue <ChevronRight size={15} /></button>
           <button type="button" disabled aria-disabled="true" title="Blocking controls are not available in this release">Blocked students <span>Coming soon</span><ChevronRight size={15} /></button>
         </div>
-        {reportOpen && <form className="service-form" aria-label="Report a safety issue" onSubmit={(event) => {
-          event.preventDefault();
-          if (!reportDetails.trim()) return;
-          const related = requests.find((request) => request.id === reportRequest);
-          const body = `Issue: ${reportType}\nRelated request: ${related ? `${related.service.title} (${related.id})` : "Not related to a request"}\n\n${reportDetails.trim()}`;
-          window.location.href = `mailto:RAPHIERAPHX@GMAIL.COM?subject=${encodeURIComponent(`HitMeUp report: ${reportType}`)}&body=${encodeURIComponent(body)}`;
-          setDraftOpened(true);
-        }}>
-          <h3>Tell us what happened</h3>
-          <label>Related request<select value={reportRequest} onChange={(event) => setReportRequest(event.target.value)}><option value="">Not related to a request</option>{requests.map((request) => <option key={request.id} value={request.id}>{request.service.title} — {request.otherParty.name}</option>)}</select></label>
-          <label>Issue type<select value={reportType} onChange={(event) => setReportType(event.target.value)}>{["Safety concern", "Harassment", "Scam or misleading listing", "No-show", "Other"].map((type) => <option key={type}>{type}</option>)}</select></label>
-          <label>Details<textarea required maxLength={1500} rows={4} value={reportDetails} onChange={(event) => { setReportDetails(event.target.value); setDraftOpened(false); }} placeholder="Describe what happened. Avoid including sensitive personal details." /></label>
-          <button className="primary-button" type="submit" disabled={!reportDetails.trim()}>Prepare report email</button>
-          {draftOpened && <p role="status">Email draft requested—not sent yet. If your email app didn’t open, email your report to RAPHIERAPHX@GMAIL.COM.</p>}
-        </form>}
+        {reportOpen && <div className="conditional-safety" role="status"><ShieldCheck size={18} /><div><strong>Tell us what happened.</strong><p>Choose the related request and include only the details the safety team needs.</p></div></div>}
         <div className="settings-footer"><a className="text-button" href="/auth/logout">Sign out</a><button className="secondary-button settings-done" type="button" onClick={onClose}>Done</button></div>
       </section>
     </div>

@@ -1,10 +1,11 @@
 import type {
+  AvatarMarketplaceProjection,
   CosmeticQuote,
-  CosmeticProjection,
   CosmeticUnlockResult,
   NotificationProjection,
   ProfileProjection,
   ProfileReview,
+  RewardSummary,
   RequestMessage,
   Service,
   ServiceCategory,
@@ -48,7 +49,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-type BackendService = {
+export type BackendService = {
   id: string;
   provider: {
     name: string;
@@ -93,6 +94,8 @@ function normalizeService(service: BackendService): Service {
     subcategory: service.subcategory || undefined,
     listingKind: permanent ? "permanent" : "temporary",
     sponsored: permanent && Boolean(service.sponsored),
+    // The backend has no verified response-time aggregate yet. Zero means unknown,
+    // and the ranking function deliberately gives it no weight.
     provider: { ...service.provider, responseMinutes: 0 },
     price: service.priceNote,
     accent: categoryAccent(category),
@@ -100,8 +103,17 @@ function normalizeService(service: BackendService): Service {
   };
 }
 
+export function normalizeServiceSnapshot(services: BackendService[]) {
+  return services.map(normalizeService);
+}
+
 export async function getSession() {
   return apiFetch<SessionProjection>("/api/session");
+}
+
+export async function getRecommendations() {
+  const result = await apiFetch<{ services: Array<BackendService & { score: number; explanation: string }> }>("/api/data/recommendations");
+  return result.services.map((service) => ({ ...normalizeService(service), score: service.score, explanation: service.explanation }));
 }
 
 export async function getServices(filters?: {
@@ -121,7 +133,7 @@ export async function getServices(filters?: {
   if (filters?.subcategory) params.set("subcategory", filters.subcategory);
   const suffix = params.size ? `?${params}` : "";
   const result = await apiFetch<{ services: BackendService[] }>(`/api/data/services${suffix}`);
-  return result.services.map(normalizeService);
+  return normalizeServiceSnapshot(result.services);
 }
 
 export function createService(input: {
@@ -196,25 +208,85 @@ export function markNotificationsRead(ids?: string[]) {
   return apiFetch<{ updated: unknown }>("/api/data/notifications", { method: "PATCH", body: JSON.stringify(ids ? { ids } : {}) });
 }
 
-export async function getCosmetics() {
-  return (await apiFetch<{ cosmetics: CosmeticProjection[] }>("/api/data/cosmetics")).cosmetics;
+export async function getAvatarMarketplace() {
+  return (await apiFetch<{ items: AvatarMarketplaceProjection[] }>("/api/data/avatar-marketplace")).items;
 }
 
-export function equipCosmetic(sku: string) {
-  return apiFetch<{ equipped: string }>("/api/data/cosmetics", { method: "PATCH", body: JSON.stringify({ sku }) });
-}
-
-export function getCosmeticQuote(productId: string) {
-  return apiFetch<CosmeticQuote>("/api/integrations/solana/quote", {
-    method: "POST",
-    body: JSON.stringify({ productId }),
+export function setAvatarMarketplaceItem(sku: string, equipped = true) {
+  return apiFetch<{ sku: string; equipped: boolean }>("/api/data/avatar-marketplace", {
+    method: "PATCH",
+    body: JSON.stringify({ sku, equipped }),
   });
 }
 
-export function unlockCosmetic(productId: string, signature: string) {
+export async function getRewards() {
+  return (await apiFetch<{ rewards: RewardSummary }>("/api/data/rewards")).rewards;
+}
+
+export function unlockWithRewardPoints(sku: string) {
+  return apiFetch<{ unlocked: string; rewards: RewardSummary }>("/api/data/rewards", {
+    method: "POST",
+    body: JSON.stringify({ sku }),
+  });
+}
+
+export type WalletLinkChallenge = { wallet: string; token: string; message: string; expiresAt: string };
+
+export function getWalletLinkChallenge(wallet: string) {
+  return apiFetch<WalletLinkChallenge>("/api/integrations/solana/wallet/challenge", { method: "POST", body: JSON.stringify({ wallet }) });
+}
+
+export function linkSolanaWallet(input: WalletLinkChallenge & { signature: string }) {
+  return apiFetch<{ linked: true; wallet: string }>("/api/integrations/solana/wallet/link", { method: "POST", body: JSON.stringify(input) });
+}
+
+function checkoutClientKey(productId: string) {
+  const storageKey = `hitmeup:solana-devnet:checkout-client:${productId}`;
+  if (typeof window !== "undefined") {
+    try {
+      const stored = window.sessionStorage.getItem(storageKey);
+      if (stored) return stored;
+      const created = crypto.randomUUID();
+      window.sessionStorage.setItem(storageKey, created);
+      return created;
+    } catch { /* A private browser may block session storage; a one-use key remains safe. */ }
+  }
+  return crypto.randomUUID();
+}
+
+export function getCosmeticQuote(productId: string, checkoutKey = checkoutClientKey(productId)) {
+  return apiFetch<CosmeticQuote>("/api/integrations/solana/quote", {
+    method: "POST",
+    body: JSON.stringify({ productId, checkoutKey }),
+  });
+}
+
+export function unlockCosmetic(productId: string, signature: string, checkoutId: string) {
   return apiFetch<CosmeticUnlockResult>("/api/integrations/solana/unlock", {
     method: "POST",
-    body: JSON.stringify({ productId, signature }),
+    body: JSON.stringify({ productId, signature, checkoutId }),
+  });
+}
+
+export type ProductEvent = {
+  name: "service_viewed" | "filter_applied";
+  serviceId?: string;
+  metadata?: {
+    category?: string;
+    source?: "discovery" | "gemini" | "deterministic" | "profile";
+    view?: "discover" | "service";
+    filter?: "category" | "distance" | "rating" | "availability" | "query" | "temporary" | "permanent";
+  };
+};
+
+/**
+ * Product analytics must never block a user action. The server derives the
+ * actor from the verified session and rejects non-categorical metadata.
+ */
+export async function recordProductEvent(event: ProductEvent) {
+  return apiFetch<{ status: "appended" | "skipped"; eventId?: string; reason?: string }>("/api/integrations/tiger/events", {
+    method: "POST",
+    body: JSON.stringify(event),
   });
 }
 
@@ -225,12 +297,52 @@ export type ServiceSuggestion = {
   suggestedTitle: string;
   riskFlags: string[];
   searchKeywords: string[];
+  suggestedPriceNote: string;
+  availabilityNote: string;
+  explanation: string;
   source: "gemini" | "deterministic-fallback";
 };
 
-export function suggestServiceDraft(input: { title: string; description: string }) {
+export function suggestServiceDraft(input: {
+  title: string;
+  description: string;
+  category?: ServiceCategory;
+  subcategory?: string;
+  availability?: string;
+  price?: string;
+}) {
   return apiFetch<ServiceSuggestion>("/api/integrations/gemini", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, geminiConsent: true }),
+  });
+}
+
+export type DiscoverySuggestion = {
+  query: string;
+  category: ServiceCategory | null;
+  subcategory: string | null;
+  radiusMiles: number | null;
+  minimumRating: number | null;
+  availability: "now" | "today" | "this-week" | "any" | null;
+  listingKind: ListingKind | "all" | null;
+  source: "gemini" | "deterministic-fallback";
+};
+
+export function interpretDiscovery(query: string) {
+  return apiFetch<DiscoverySuggestion>("/api/gemini/discover", {
+    method: "POST",
+    body: JSON.stringify({ query, geminiConsent: true }),
+  });
+}
+
+export type RecommendationExplanation = {
+  explanation: string;
+  source: "gemini" | "deterministic-fallback";
+};
+
+export function explainServiceRecommendation(serviceId: string) {
+  return apiFetch<RecommendationExplanation>("/api/gemini/explain", {
+    method: "POST",
+    body: JSON.stringify({ serviceId, geminiConsent: true }),
   });
 }

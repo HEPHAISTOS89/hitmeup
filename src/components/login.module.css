@@ -16,8 +16,8 @@
 .campusHeading h1 { margin: 0; color: #202024; font-family: "Helvetica Neue", Arial, sans-serif; font-size: clamp(48px, 5.3vw, 78px); font-weight: 600; line-height: 1.02; letter-spacing: -.055em; }
 .campusHeading h1 span { display: block; }
 .campusHeading h1 .accent { color: #ce0025; }
-.photoCredit { position: absolute; bottom: 20px; left: 24px; right: 24px; color: #fff; font-size: 10px; line-height: 1.6; }
-.photoCredit a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.photoCreditLink { position: absolute; top: 18px; right: 18px; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 999px; color: rgb(255 255 255 / 72%); background: rgb(0 0 0 / 20%); font-size: 14px; text-decoration: none; backdrop-filter: blur(8px); }
+.photoCreditLink:hover { color: #fff; background: rgb(0 0 0 / 38%); }
 .signIn { position: relative; display: grid; place-items: center; overflow: hidden; padding: clamp(24px, 4vw, 64px); isolation: isolate; }
 .signIn::before, .signIn::after { content: ""; position: absolute; z-index: -1; width: 360px; height: 640px; border-radius: 48%; background: #f8edef; transform: rotate(-36deg); }
 .signIn::before { top: -280px; left: -150px; }
@@ -31,7 +31,7 @@
 .microsoftButton { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 62px; padding: 14px 18px; border: 1px solid #e4e2e3; border-radius: 14px; background: #fff; color: #171719; font-size: 15px; font-weight: 600; text-decoration: none; box-shadow: 0 3px 10px #17171904; transition: border-color .2s, box-shadow .2s; }
 .microsoftButton > svg { margin-left: auto; flex-shrink: 0; }
 .microsoftButton:hover { border-color: #d50022; box-shadow: 0 4px 16px #d500220a; }
-.microsoftButton:focus-visible, .photoCredit a:focus-visible { outline: 3px solid #d50022; outline-offset: 5px; }
+.microsoftButton:focus-visible, .photoCreditLink:focus-visible { outline: 3px solid #d50022; outline-offset: 5px; }
 @media (max-width: 760px) {
   .screen { grid-template-columns: 1fr; }
   .campus { min-height: 360px; background-position: center 36%; }
@@ -39,11 +39,15 @@
   .campusHeading h1 { font-size: clamp(42px, 10vw, 56px); }
   .campusHeading p { margin-bottom: 22px; }
   .campusHeading p { font-size: 10px; }
-  .photoCredit { bottom: 12px; font-size: 9px; }
+  .photoCreditLink { top: 12px; right: 12px; }
   .signIn { padding: 24px 18px; }
   .card { padding: 32px 24px; border-radius: 24px; }
   .brand { margin-bottom: 26px; gap: 8px; }
   .brand svg { width: 64px; height: 64px; }
   .actions { margin-top: 28px; }
   .microsoftButton { font-size: 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .microsoftButton { transition: none; }
 }

@@ -1,9 +1,11 @@
-import { LegacyAvatarStudio } from "@/components/legacy-avatar-studio";
+import { AvatarPageClient } from "@/components/avatar-page-client";
+import { isFixturePreviewEnabled } from "@/lib/preview-mode";
 
 export default async function AvatarPage({ searchParams }: { searchParams: Promise<{ preview?: string }> }) {
   const { preview } = await searchParams;
-  return <main className="avatar-editor-page">
-    <header><a href={preview === "1" ? "/app?preview=1&view=profile" : "/app?view=profile"}>← Back to profile</a><h1>Your avatar</h1></header>
-    <LegacyAvatarStudio />
-  </main>;
+  const previewMode = isFixturePreviewEnabled(preview, {
+    nodeEnv: process.env.NODE_ENV,
+    vercelEnv: process.env.VERCEL_ENV,
+  });
+  return <AvatarPageClient preview={previewMode} />;
 }

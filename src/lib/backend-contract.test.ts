@@ -69,8 +69,8 @@ describe("backend security contract", () => {
 
   it("requires an exact (not greater-than) Devnet cosmetic transfer", async () => {
     vi.stubEnv("SOLANA_TREASURY", "11111111111111111111111111111111");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ result: { slot: 1, meta: { err: null }, transaction: { message: { accountKeys: [{ pubkey: "11111111111111111111111111111111", signer: false }, { pubkey: "22222222222222222222222222222222", signer: true }], instructions: [{ program: "system", parsed: { type: "transfer", info: { source: "22222222222222222222222222222222", destination: "11111111111111111111111111111111", lamports: 10000001 } } }] } } } }), { status: 200 })));
-    await expect(verifyCosmeticPayment("2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2", "profile-frame", "22222222222222222222222222222222")).rejects.toThrow("does not pay");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ result: { slot: 1, meta: { err: null }, transaction: { message: { accountKeys: [{ pubkey: "11111111111111111111111111111111", signer: false }, { pubkey: "22222222222222222222222222222222", signer: true }], instructions: [{ program: "system", parsed: { type: "transfer", info: { source: "22222222222222222222222222222222", destination: "11111111111111111111111111111111", lamports: 50000001 } } }] } } } }), { status: 200 })));
+    await expect(verifyCosmeticPayment("2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2", "avatar-premium-collection", "22222222222222222222222222222222")).rejects.toThrow("does not pay");
   });
 
   it("defines append-only pseudonymous Tiger storage", () => {
@@ -153,14 +153,13 @@ describe("backend security contract", () => {
     expect(marketplace).toContain("preferredId && activeRequestIdRef.current !== preferredId");
   });
 
-  it("keeps the avatar studio isolated in a same-origin iframe with a validated resize channel", () => {
-    const studio = readFileSync(new URL("../components/legacy-avatar-studio.tsx", import.meta.url), "utf8");
-    const embed = readFileSync(new URL("../../public/avatar-customizer/embed.js", import.meta.url), "utf8");
-    expect(studio).toContain("event.origin !== window.location.origin");
-    expect(studio).toContain("event.source !== frame.current?.contentWindow");
-    expect(studio).toContain('event.data?.type !== "avatar-studio-height"');
-    expect(embed).toContain("window.location.origin");
-    expect(embed).toContain('localStorage.setItem("hmu-avatar-picture"');
+  it("uses Laura's server-backed marketplace without the retired iframe studio", () => {
+    const marketplace = readFileSync(new URL("../components/laura-avatar-marketplace.tsx", import.meta.url), "utf8");
+    expect(marketplace).toContain("getAvatarMarketplace");
+    expect(marketplace).toContain("setAvatarMarketplaceItem");
+    expect(marketplace).toContain("SolanaWalletPay");
+    expect(marketplace).not.toContain("localStorage");
+    expect(marketplace).not.toContain("iframe");
   });
 
   it("distinguishes an ineligible Auth0 account from missing configuration", () => {

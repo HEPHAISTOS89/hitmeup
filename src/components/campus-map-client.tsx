@@ -1,10 +1,22 @@
 "use client";
 
-import { AttributionControl, Map as MapLibreMap, Marker as MapLibreMarker, Popup, NavigationControl, setWorkerUrl } from "maplibre-gl";
+import { AttributionControl, Map as MapLibreMap, Marker as MapLibreMarker, NavigationControl, Popup, setWorkerUrl } from "maplibre-gl";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { renderToStaticMarkup } from "react-dom/server";
-import { PartyPopper, Wrench, GraduationCap, Briefcase, HeartHandshake, Gamepad2, Dumbbell, Ticket, Store, HandHelping, type LucideIcon } from "lucide-react";
+import {
+  Briefcase,
+  Dumbbell,
+  Gamepad2,
+  GraduationCap,
+  HandHelping,
+  HeartHandshake,
+  PartyPopper,
+  Store,
+  Ticket,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import type { Service, ServiceCategory } from "@/lib/types";
 import { CAMPUS_CENTER } from "@/lib/service-catalog";
 import { categoryDefinition } from "@/lib/service-taxonomy";
@@ -40,9 +52,16 @@ const CATEGORY_MARKERS: Record<ServiceCategory, { glyph: string; slug: string }>
 };
 
 const CATEGORY_PIN_ICONS: Record<ServiceCategory, LucideIcon> = {
-  Social: PartyPopper, Services: Wrench, Tutoring: GraduationCap, Jobs: Briefcase,
-  Volunteer: HeartHandshake, Clubs: Gamepad2, Activities: Dumbbell, Events: Ticket,
-  Businesses: Store, Help: HandHelping,
+  Social: PartyPopper,
+  Services: Wrench,
+  Tutoring: GraduationCap,
+  Jobs: Briefcase,
+  Volunteer: HeartHandshake,
+  Clubs: Gamepad2,
+  Activities: Dumbbell,
+  Events: Ticket,
+  Businesses: Store,
+  Help: HandHelping,
 };
 
 function CategoryPinIcon({ category }: { category: ServiceCategory }) {
@@ -133,7 +152,10 @@ function MapFallback({
             <span
               className={`campus-diagram-pin is-${presentation.slug}${service.id === selectedId ? " is-selected" : ""}`}
               key={service.id}
-              style={{ ...fallbackPosition(service.approximatePosition, services), "--marker-color": categoryDefinition(service.category).accent } as CSSProperties}
+              style={{
+                ...fallbackPosition(service.approximatePosition, services),
+                "--marker-color": categoryDefinition(service.category).accent,
+              } as CSSProperties}
             >
               <CategoryPinIcon category={service.category} />
             </span>
@@ -178,8 +200,9 @@ export default function CampusMapClient({
   onSelect: (id: string) => void;
   popupContent?: ReactNode;
 }) {
-  // This component is loaded with `ssr: false`, so the DOM is available during initialization.
-  const [popupHost] = useState<HTMLDivElement | null>(() => typeof document === "undefined" ? null : document.createElement("div"));
+  const [popupHost] = useState<HTMLDivElement | null>(() =>
+    typeof document === "undefined" ? null : document.createElement("div"),
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef(new Map<string, MarkerRecord>());
@@ -193,68 +216,7 @@ export default function CampusMapClient({
   const [fallbackReason, setFallbackReason] = useState<MapFallbackReason>(() => typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "style");
   const [theme, setTheme] = useState<"light" | "dark">(() => typeof document === "undefined" ? "light" : documentTheme());
   const [retryKey, setRetryKey] = useState(0);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || phase !== "ready") return;
-    const canvas = map.getCanvas();
-    map.dragPan.disable();
-    map.dragRotate.disable();
-    map.touchZoomRotate.disable();
-    map.touchPitch.disable();
-    const previousCursor = canvas.style.cursor;
-    const previousTouchAction = canvas.style.touchAction;
-    canvas.style.cursor = "grab";
-    canvas.style.touchAction = "none";
-    let drag: { id: number; button: number; x: number; y: number; bearing: number; pitch: number } | null = null;
-    const down = (event: PointerEvent) => {
-      if ((event.button !== 0 && event.button !== 2) || drag) return;
-      event.preventDefault();
-      map.stop();
-      drag = { id: event.pointerId, button: event.button, x: event.clientX, y: event.clientY, bearing: map.getBearing(), pitch: map.getPitch() };
-      canvas.setPointerCapture(event.pointerId);
-      canvas.style.cursor = "grabbing";
-    };
-    const move = (event: PointerEvent) => {
-      if (!drag || drag.id !== event.pointerId) return;
-      event.preventDefault();
-      if (drag.button === 2) {
-        map.panBy([drag.x - event.clientX, drag.y - event.clientY], { duration: 0 });
-        drag.x = event.clientX;
-        drag.y = event.clientY;
-      } else {
-        map.jumpTo({ bearing: drag.bearing + (event.clientX - drag.x) * 0.4, pitch: Math.max(0, Math.min(65, drag.pitch - (event.clientY - drag.y) * 0.3)) });
-      }
-    };
-    const up = (event: PointerEvent) => {
-      if (!drag || drag.id !== event.pointerId) return;
-      drag = null;
-      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-      canvas.style.cursor = "grab";
-    };
-    const preventMenu = (event: MouseEvent) => event.preventDefault();
-    canvas.addEventListener("contextmenu", preventMenu);
-    canvas.addEventListener("pointerdown", down);
-    canvas.addEventListener("pointermove", move);
-    canvas.addEventListener("pointerup", up);
-    canvas.addEventListener("pointercancel", up);
-    canvas.addEventListener("lostpointercapture", up);
-    return () => {
-      canvas.removeEventListener("contextmenu", preventMenu);
-      canvas.removeEventListener("pointerdown", down);
-      canvas.removeEventListener("pointermove", move);
-      canvas.removeEventListener("pointerup", up);
-      canvas.removeEventListener("pointercancel", up);
-      canvas.removeEventListener("lostpointercapture", up);
-      if (drag && canvas.hasPointerCapture(drag.id)) canvas.releasePointerCapture(drag.id);
-      canvas.style.cursor = previousCursor;
-      canvas.style.touchAction = previousTouchAction;
-      map.dragPan.enable();
-      map.dragRotate.enable();
-      map.touchZoomRotate.enable();
-      map.touchPitch.enable();
-    };
-  }, [phase, retryKey]);
+  const [cameraTilted, setCameraTilted] = useState(false);
 
   function setMapPhase(next: MapPhase) {
     phaseRef.current = next;
@@ -317,6 +279,7 @@ export default function CampusMapClient({
         maxZoom: 18,
         attributionControl: false,
         cooperativeGestures: true,
+        dragPan: true,
         dragRotate: true,
         pitchWithRotate: true,
         touchZoomRotate: true,
@@ -358,8 +321,10 @@ export default function CampusMapClient({
     const handleMapReady = () => {
       stylePendingRef.current = false;
       if (styleTimerRef.current) window.clearTimeout(styleTimerRef.current);
+      setCameraTilted(map.getPitch() > 0);
       setMapPhase("ready");
     };
+    const handlePitch = () => setCameraTilted(map.getPitch() > 0);
     const handleStyleReady = () => {
       // `style.load` also fires during initial startup, before the first
       // visually complete render. It is only a completion signal for later
@@ -370,6 +335,7 @@ export default function CampusMapClient({
     };
 
     map.on("load", handleMapReady);
+    map.on("pitch", handlePitch);
     map.on("style.load", handleStyleReady);
     styleTimerRef.current = window.setTimeout(() => {
       // A slow or partially failed tile must not replace an otherwise usable
@@ -391,6 +357,7 @@ export default function CampusMapClient({
       markers.forEach(({ marker }) => marker.remove());
       markers.clear();
       map.off("load", handleMapReady);
+      map.off("pitch", handlePitch);
       map.off("style.load", handleStyleReady);
       map.remove();
       if (mapRef.current === map) mapRef.current = null;
@@ -453,7 +420,7 @@ export default function CampusMapClient({
       const glyph = document.createElement("span");
       glyph.className = "campus-map-pin-glyph";
       glyph.setAttribute("aria-hidden", "true");
-      // Only trusted, locally defined icon markup; no listing content is inserted as HTML.
+      // Category icon markup is local and contains no listing content.
       glyph.innerHTML = renderToStaticMarkup(<CategoryPinIcon category={service.category} />);
 
       const card = document.createElement("span");
@@ -504,16 +471,28 @@ export default function CampusMapClient({
   }
 
   const popupVisible = Boolean(popupContent);
+
   useEffect(() => {
     const map = mapRef.current;
     const service = services.find((item) => item.id === selectedId);
     if (!map || !service || !popupHost || !popupVisible || phase !== "ready") return;
-    const popup = new Popup({ closeButton: false, closeOnClick: false, anchor: "left", maxWidth: "340px", offset: 28, className: "listing-map-popup" })
+
+    const popup = new Popup({
+      closeButton: false,
+      closeOnClick: false,
+      anchor: "left",
+      maxWidth: "340px",
+      offset: 28,
+      className: "listing-map-popup",
+    })
       .setLngLat(mapCenter(service.approximatePosition))
       .setDOMContent(popupHost)
       .addTo(map);
-    return () => { popup.remove(); };
-  }, [selectedId, services, popupHost, popupVisible, phase]);
+
+    return () => {
+      popup.remove();
+    };
+  }, [phase, popupContent, popupHost, popupVisible, selectedId, services]);
 
   return (
     <div className="campus-map-experience">
@@ -536,10 +515,35 @@ export default function CampusMapClient({
 
       {phase === "ready" && (
         <div className="map-camera-controls" role="group" aria-label="Map camera">
-          <button type="button" aria-label="Tilt map" title="Toggle tilted view" onClick={() => { const map = mapRef.current; if (map) map.easeTo({ pitch: map.getPitch() > 0 ? 0 : 50, duration: reducedMotion() ? 0 : 350 }); }}>3D</button>
-          <button type="button" aria-label="Reset map orientation" title="Reset north and flatten" onClick={() => mapRef.current?.easeTo({ bearing: 0, pitch: 0, duration: reducedMotion() ? 0 : 300 })}>N ↑</button>
+          <button
+            type="button"
+            aria-label={cameraTilted ? "Flatten map" : "Tilt map"}
+            aria-pressed={cameraTilted}
+            title={cameraTilted ? "Flatten map" : "Switch to tilted view"}
+            onClick={() => {
+              const map = mapRef.current;
+              if (!map) return;
+              const nextTilted = map.getPitch() <= 0;
+              setCameraTilted(nextTilted);
+              map.easeTo({ pitch: nextTilted ? 50 : 0, duration: reducedMotion() ? 0 : 350 });
+            }}
+          >
+            3D
+          </button>
+          <button
+            type="button"
+            aria-label="Reset map orientation"
+            title="Reset north and flatten"
+            onClick={() => {
+              setCameraTilted(false);
+              mapRef.current?.easeTo({ bearing: 0, pitch: 0, duration: reducedMotion() ? 0 : 300 });
+            }}
+          >
+            N ↑
+          </button>
         </div>
       )}
+
       {phase === "ready" && (
         <div className="map-provider-state" role="status" aria-live="polite">
           <span /> Vector map ready

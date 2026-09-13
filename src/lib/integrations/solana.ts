@@ -1,10 +1,7 @@
 import { fetchWithTimeout, IntegrationError, readJson } from "./http";
+import { SOLANA_AVATAR_PRODUCTS, getSolanaAvatarProduct } from "../avatar-marketplace-catalog";
 
-export const COSMETIC_PRODUCTS = {
-  "profile-frame": { lamports: 10_000_000, label: "Profile frame" },
-  "campus-theme": { lamports: 20_000_000, label: "Campus theme" },
-  "trust-badge": { lamports: 30_000_000, label: "Trust badge" },
-} as const;
+export const COSMETIC_PRODUCTS = SOLANA_AVATAR_PRODUCTS;
 
 export type CosmeticProductId = keyof typeof COSMETIC_PRODUCTS;
 
@@ -74,7 +71,8 @@ export type UnlockVerification = {
 };
 
 export function getCosmeticQuote(productId: string) {
-  if (!(productId in COSMETIC_PRODUCTS)) {
+  const product = getSolanaAvatarProduct(productId);
+  if (!product) {
     throw new IntegrationError("invalid_response", "Unknown cosmetic product.", 400);
   }
   // Validate the complete Devnet boundary before revealing the public payment
@@ -84,7 +82,6 @@ export function getCosmeticQuote(productId: string) {
   if (!treasury || !isBase58(treasury)) {
     throw new IntegrationError("configuration", "A Devnet treasury is not configured.");
   }
-  const product = COSMETIC_PRODUCTS[productId as CosmeticProductId];
   return {
     network: "devnet" as const,
     productId: productId as CosmeticProductId,
@@ -101,14 +98,15 @@ export async function verifyCosmeticPayment(signature: string, productId: string
   const quote = getCosmeticQuote(productId);
   const treasury = quote.treasury;
   if (!isBase58(expectedPayer)) throw new IntegrationError("invalid_response", "A valid linked Devnet wallet is required.", 400);
-  const product = COSMETIC_PRODUCTS[productId as CosmeticProductId];
+  const product = getSolanaAvatarProduct(productId);
+  if (!product) throw new IntegrationError("invalid_response", "Unknown cosmetic product.", 400);
   const response = await fetchWithTimeout(devnetRpcUrl(), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [signature, { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 0 }] }),
   });
   const rpc = await readJson<RpcResponse>(response);
-  if (rpc.error || !rpc.result || rpc.result.meta?.err) {
+  if (rpc.error || !rpc.result || !rpc.result.meta || rpc.result.meta.err !== null) {
     throw new IntegrationError("invalid_response", "The Devnet transaction is not confirmed or failed.", 400);
   }
   const transaction = rpc.result;

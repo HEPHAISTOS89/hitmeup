@@ -12,6 +12,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { ApiError, updateProfile } from "@/lib/client-api";
 import { HitMeUpLogo } from "./hitmeup-logo";
 import styles from "./login.module.css";
 
@@ -77,24 +78,31 @@ function Login() {
     <main className={styles.screen}>
       <section className={styles.campus} aria-label="Texas Tech University campus">
         <div className={styles.campusHeading}>
-        <p>Texas Tech University</p>
-        <h1><span>Students</span><span>helping</span><span className={styles.accent}>students.</span></h1>
+          <p>Texas Tech University</p>
+          <h1 aria-label="Students helping students."><span>Students</span><span>helping</span><span className={styles.accent}>students.</span></h1>
         </div>
-        <div className={styles.photoCredit}>
-          Photo: <a href="https://commons.wikimedia.org/wiki/File:Texas_Tech_University_April_2022_16_(Administration).jpg" target="_blank" rel="noreferrer">Michael Barera</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a> · cropped
-        </div>
+        <a
+          className={styles.photoCreditLink}
+          href="https://commons.wikimedia.org/wiki/File:Texas_Tech_University_April_2022_16_(Administration).jpg"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Campus photo by Michael Barera, cropped, licensed CC BY-SA 4.0"
+          title="Photo: Michael Barera · CC BY-SA 4.0 · cropped"
+        >
+          <span aria-hidden="true">ⓘ</span>
+        </a>
       </section>
       <section className={styles.signIn} aria-labelledby="login-heading">
         <div className={styles.card}>
-        <div className={styles.brand}><HitMeUpLogo size={88} /><strong>HitMeUp</strong></div>
-        <h2 id="login-heading">Welcome back.</h2>
-        <p className={styles.subtitle}>Verify with your university account.</p>
-        <div className={styles.actions}>
-          <a className={styles.microsoftButton} href="/auth/login?returnTo=/app">
-            <span className="microsoft-mark" aria-hidden="true"><i /><i /><i /><i /></span>
-            Continue with Microsoft <ArrowRight size={17} />
-          </a>
-        </div>
+          <div className={styles.brand}><HitMeUpLogo size={88} /><strong>HitMeUp</strong></div>
+          <h2 id="login-heading">Welcome back.</h2>
+          <p className={styles.subtitle}>Verify with your university account.</p>
+          <div className={styles.actions}>
+            <a className={styles.microsoftButton} href="/auth/login?returnTo=/app">
+              <span className="microsoft-mark" aria-hidden="true"><i /><i /><i /><i /></span>
+              Continue with Microsoft <ArrowRight size={17} />
+            </a>
+          </div>
         </div>
       </section>
     </main>
@@ -143,15 +151,32 @@ function Verification({
 function ProfileSetup({ onContinue }: { onContinue: () => void }) {
   const [name, setName] = useState("");
   const [program, setProgram] = useState("");
+  const [introduction, setIntroduction] = useState("");
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
     if (!name.trim() || !program.trim()) {
       setError("Add the name and program you want shown to other verified students.");
       return;
     }
-    onContinue();
+    setSaving(true);
+    setError("");
+    try {
+      // The profile contract has no dedicated program field yet. Preserve the
+      // student's explicit choice as an interest rather than dropping it.
+      await updateProfile({
+        displayName: name.trim(),
+        bio: introduction.trim() || null,
+        interests: [program.trim()],
+      });
+      onContinue();
+    } catch (submitError) {
+      setError(submitError instanceof ApiError ? submitError.message : "Your profile could not be saved. Try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -162,11 +187,11 @@ function ProfileSetup({ onContinue }: { onContinue: () => void }) {
         <h1>Introduce the useful part of you.</h1>
         <p className="login-copy">Your verified identity fields are not assumed public. Choose the limited profile information people need for a service.</p>
         <form className="service-form" onSubmit={submit} noValidate>
-          <label>Display name<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" placeholder="How students should address you" /></label>
-          <label>Program or area of study<input value={program} onChange={(event) => setProgram(event.target.value)} placeholder="e.g. Computer science" /></label>
-          <label>Short introduction<textarea rows={3} maxLength={180} placeholder="Skills, languages, or the kind of help you offer" /></label>
+          <label>Display name<input maxLength={60} value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" placeholder="How students should address you" /></label>
+          <label>Program or area of study<input maxLength={50} value={program} onChange={(event) => setProgram(event.target.value)} placeholder="e.g. Computer science" /></label>
+          <label>Short introduction<textarea rows={3} maxLength={180} value={introduction} onChange={(event) => setIntroduction(event.target.value)} placeholder="Skills, languages, or the kind of help you offer" /></label>
           {error && <p className="form-error" role="alert">{error}</p>}
-          <button className="primary-action" type="submit">Continue <ArrowRight size={16} /></button>
+          <button className="primary-action" type="submit" disabled={saving}>{saving ? "Saving…" : "Continue"} {!saving && <ArrowRight size={16} />}</button>
         </form>
       </section>
     </main>
@@ -174,7 +199,20 @@ function ProfileSetup({ onContinue }: { onContinue: () => void }) {
 }
 
 function PrivacySetup({ onContinue }: { onContinue: () => void }) {
-  const [permission, setPermission] = useState<"unknown" | "allowed" | "denied">("unknown");
+  const [permission, setPermission] = useState<"unknown" | "asking" | "allowed" | "denied">("unknown");
+
+  function requestLocation() {
+    if (!("geolocation" in navigator)) {
+      setPermission("denied");
+      return;
+    }
+    setPermission("asking");
+    navigator.geolocation.getCurrentPosition(
+      () => setPermission("allowed"),
+      () => setPermission("denied"),
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
+    );
+  }
   return (
     <main className="entry-screen setup-screen privacy-setup">
       <section className="setup-panel setup-panel-wide">
@@ -190,10 +228,10 @@ function PrivacySetup({ onContinue }: { onContinue: () => void }) {
               <span><LockKeyhole size={17} /> Accepted service: each person chooses whether to share</span>
               <span><ShieldCheck size={17} /> Completion: exact sharing expires</span>
             </div>
-            {permission === "denied" && <p className="permission-note" role="status">Location is off. You can continue and search manually.</p>}
+            {permission === "denied" && <p className="permission-note" role="status">Location is off. You can continue and search manually. You can enable it later in your browser settings.</p>}
             <div className="setup-actions">
-              <button className="primary-action" type="button" onClick={() => setPermission("allowed")}><LocateFixed size={16} /> {permission === "allowed" ? "Location allowed" : "Allow location"}</button>
-              <button className="secondary-button" type="button" onClick={() => setPermission("denied")}>Not now</button>
+              <button className="primary-action" type="button" disabled={permission === "asking"} onClick={requestLocation}><LocateFixed size={16} /> {permission === "allowed" ? "Location allowed" : permission === "asking" ? "Checking location…" : "Allow location"}</button>
+              <button className="secondary-button" type="button" disabled={permission === "asking"} onClick={() => setPermission("denied")}>Not now</button>
             </div>
             <button className="text-button" type="button" onClick={onContinue}>{permission === "allowed" ? "Open the map" : "Continue without location"} <ArrowRight size={16} /></button>
           </div>

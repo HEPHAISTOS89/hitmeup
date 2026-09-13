@@ -2,6 +2,8 @@
 
 Original, transparent SVG assets for the HitMeUp web UI. The system uses a wordless relay/connection mark, coral-red identity color, black trust anchors, rounded geometry, and a small diamond handoff node. It intentionally avoids people or human imagery, hearts, dating cues, precise-address pins, university trademarks, text baked into graphics, and third-party marks.
 
+`texas-tech-campus.jpg` is a cropped copy of “Texas Tech University April 2022 16 (Administration)” by Michael Barera, sourced from Wikimedia Commons under CC BY-SA 4.0. The login screen keeps this attribution in a compact information link instead of placing a text caption over the photograph.
+
 | File | Intended UI role | ViewBox | Notes |
 | --- | --- | --- | --- |
 | `logo-mark.svg` | Default logo mark on light surfaces | `0 0 64 64` | Red/coral with a black relay node; legible at favicon/navigation sizes. |

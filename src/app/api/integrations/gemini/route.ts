@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireVerifiedStudent } from "@/lib/auth0";
 import { integrationErrorResponse, parseJson } from "@/lib/integrations/api";
-import { suggestService } from "@/lib/integrations/gemini";
+import { suggestService, type ServiceDraft } from "@/lib/integrations/gemini";
 import { allowRate } from "@/lib/rate-limit";
 import { assertSameOriginMutation } from "@/lib/security";
 
@@ -13,10 +13,13 @@ export async function POST(request: Request) {
     const rate = await allowRate(auth.student.sub, "gemini", 20, 60_000);
     if (!rate.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "retry-after": String(rate.retryAfterSeconds) } });
     const body = await parseJson(request);
-    if ((body.title !== undefined && typeof body.title !== "string") || (body.description !== undefined && typeof body.description !== "string") || (body.imageDataUrl !== undefined && typeof body.imageDataUrl !== "string")) {
-      return NextResponse.json({ error: "title, description and imageDataUrl must be strings", code: "invalid_response" }, { status: 400 });
+    if (body.geminiConsent !== true) return NextResponse.json({ error: "Gemini consent is required.", code: "consent_required" }, { status: 400 });
+    const stringFields = ["title", "description", "category", "subcategory", "availability", "price", "imageDataUrl"] as const;
+    if (stringFields.some((field) => body[field] !== undefined && typeof body[field] !== "string")) {
+      return NextResponse.json({ error: "listing fields must be strings", code: "invalid_response" }, { status: 400 });
     }
-    return NextResponse.json(await suggestService({ title: body.title ?? "", description: body.description ?? "", imageDataUrl: body.imageDataUrl }));
+    const draft = Object.fromEntries(stringFields.filter((field) => body[field] !== undefined).map((field) => [field, body[field]])) as ServiceDraft;
+    return NextResponse.json(await suggestService(draft));
   } catch (error) {
     return integrationErrorResponse(error);
   }

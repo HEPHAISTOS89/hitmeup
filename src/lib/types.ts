@@ -1,4 +1,5 @@
 import type { ListingKind, ServiceCategory } from "./service-taxonomy";
+import type { AvatarAssetStatus, AvatarMarketplaceCategory, AvatarUnlockMethod } from "./avatar-marketplace-catalog";
 
 export type { ListingKind, ServiceCategory } from "./service-taxonomy";
 
@@ -77,11 +78,15 @@ export type RequestMessage = {
   senderName: string;
 };
 
+export type SkinToneId = "porcelain" | "sand" | "golden" | "umber" | "cocoa" | "ebony";
+export type HairStyleId = "crop" | "curls" | "locs" | "bob";
+export type HairColorId = "ink" | "chestnut" | "auburn" | "violet";
+
 export type AvatarConfig = {
-  skin: "porcelain" | "sand" | "golden" | "umber" | "cocoa" | "ebony";
+  skin: SkinToneId;
   face: "smile" | "focused" | "wink";
-  hair: "crop" | "curls" | "locs" | "bob";
-  hairColor: "ink" | "chestnut" | "auburn" | "violet";
+  hair: HairStyleId;
+  hairColor: HairColorId;
   outfit: "tee" | "hoodie" | "tech";
   accessory: "none" | "glasses" | "headphones";
 };
@@ -109,13 +114,28 @@ export type ProfileReview = {
   service: { title: string };
 };
 
-export type CosmeticProjection = {
+export type AvatarMarketplaceProjection = {
   sku: string;
   label: string;
+  category: AvatarMarketplaceCategory;
+  value: string;
+  equipGroup: string;
+  collections: Array<"male" | "female">;
+  unlockMethod: AvatarUnlockMethod;
+  purchaseSku: string | null;
   lamports: number;
+  rewardPoints: number;
   owned: boolean;
   equipped: boolean;
-  network: "devnet";
+  network: "devnet" | null;
+  assetStatus: AvatarAssetStatus;
+};
+
+export type RewardSummary = {
+  balance: number;
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+  unlockedSkus: string[];
 };
 
 export type CosmeticQuote = {
@@ -124,6 +144,7 @@ export type CosmeticQuote = {
   label: string;
   lamports: number;
   treasury: string;
+  checkoutId: string;
 };
 
 export type CosmeticUnlockResult = {

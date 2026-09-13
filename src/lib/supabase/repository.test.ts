@@ -139,12 +139,11 @@ describe("Supabase repository boundaries", () => {
   it("updates only the current profile through the checked RPC", async () => {
     const rpc = vi.fn(async () => ({ data: true, error: null }));
     await expect(updateProfile({ rpc } as never, { displayName: "Taylor", interests: ["Tutoring"] })).resolves.toBe(true);
-    expect(rpc).toHaveBeenCalledWith("update_my_profile", expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith("update_my_profile_without_wallet", expect.objectContaining({
       set_display_name: true,
       target_display_name: "Taylor",
       set_interests: true,
       target_interests: ["Tutoring"],
-      set_solana_wallet: false,
     }));
   });
 
@@ -152,14 +151,20 @@ describe("Supabase repository boundaries", () => {
     const rpc = vi.fn(async () => ({ data: true, error: null }));
     const avatarConfig = { skin: "ebony", face: "focused", hair: "locs", hairColor: "ink", outfit: "tech", accessory: "glasses" } as const;
     await expect(updateProfile({ rpc } as never, { avatarConfig })).resolves.toBe(true);
-    expect(rpc).toHaveBeenCalledWith("update_my_profile", expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith("update_my_profile_without_wallet", expect.objectContaining({
       set_avatar_config: true,
       target_avatar_config: avatarConfig,
     }));
 
     rpc.mockClear();
     await expect(updateProfile({ rpc } as never, { avatarConfig: { ...avatarConfig, accessory: "premium-crown" } as never })).rejects.toThrow("avatarConfig is invalid");
-    await expect(updateProfile({ rpc } as never, { avatarConfig: { ...avatarConfig, frame: "trust-badge" } as never })).rejects.toThrow("avatarConfig is invalid");
+    await expect(updateProfile({ rpc } as never, { avatarConfig: { ...avatarConfig, frame: "retired-item" } as never })).rejects.toThrow("avatarConfig is invalid");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects direct wallet reassignment in favor of signed proof", async () => {
+    const rpc = vi.fn();
+    await expect(updateProfile({ rpc } as never, { solanaWallet: "Vote111111111111111111111111111111111111111" })).rejects.toThrow("signed wallet-link flow");
     expect(rpc).not.toHaveBeenCalled();
   });
 });
