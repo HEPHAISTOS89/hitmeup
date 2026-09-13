@@ -139,7 +139,7 @@ const PREVIEW_REVIEWS: ProfileReview[] = [
   { id: "preview-review-2", score: 5, comment: "Showed up on time and made the setup easy to follow.", createdAt: "2026-08-27T14:14:00-05:00", author: { name: "Nina Brooks", initials: "NB" }, service: { title: "Laptop setup" } },
 ];
 
-type AppView = "discover" | "requests" | "profile";
+export type AppView = "discover" | "requests" | "profile";
 type EntryTarget = EntryState | "app";
 type DataMode = "live" | "preview";
 type SurfaceMode = "default" | "loading" | "offline";
@@ -229,19 +229,17 @@ function serviceForRequest(request: ServiceRequestSummary, service?: Service): S
   };
 }
 
-export function CampusMarketplace({ initialEntry = "splash", dataMode = "live" }: { initialEntry?: EntryTarget; dataMode?: DataMode }) {
+export function CampusMarketplace({ initialEntry = "splash", dataMode = "live", initialView = "discover" }: { initialEntry?: EntryTarget; dataMode?: DataMode; initialView?: AppView }) {
   const [entry, setEntry] = useState<EntryTarget>(initialEntry);
 
   function completeEntry() { setEntry("app"); }
 
   if (entry !== "app") return <EntryFlow initialEntry={entry} onComplete={completeEntry} />;
-  return <MarketplaceShell dataMode={dataMode} />;
+  return <MarketplaceShell dataMode={dataMode} initialView={initialView} />;
 }
 
-function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
-  // The avatar page links back with `#profile`; the shell is mounted client-side
-  // behind AppGate, so reading the hash during initialization is safe.
-  const [view, setView] = useState<AppView>(() => typeof window !== "undefined" && window.location.hash === "#profile" ? "profile" : "discover");
+function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initialView: AppView }) {
+  const [view, setView] = useState<AppView>(initialView);
   const [services, setServices] = useState<Service[]>(dataMode === "preview" ? SERVICES : []);
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
   const [listingFilter, setListingFilter] = useState<ListingFilter>("all");

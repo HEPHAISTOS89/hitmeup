@@ -2,13 +2,13 @@
 
 import { ArrowRight, LoaderCircle, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { CampusMarketplace } from "./campus-marketplace";
+import { CampusMarketplace, type AppView } from "./campus-marketplace";
 import { HitMeUpLogo } from "./hitmeup-logo";
 import { ApiError, getSession } from "@/lib/client-api";
 
 type GateState = "loading" | "authenticated" | "unauthenticated" | "denied" | "unavailable";
 
-export function AppGate({ preview = false }: { preview?: boolean }) {
+export function AppGate({ preview = false, initialView }: { preview?: boolean; initialView?: AppView }) {
   const [state, setState] = useState<GateState>(preview ? "authenticated" : "loading");
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export function AppGate({ preview = false }: { preview?: boolean }) {
   }, [preview]);
 
   if (state === "authenticated") {
-    return <CampusMarketplace initialEntry="app" dataMode={preview ? "preview" : "live"} />;
+    return <CampusMarketplace initialEntry="app" dataMode={preview ? "preview" : "live"} initialView={initialView} />;
   }
 
   const loading = state === "loading";

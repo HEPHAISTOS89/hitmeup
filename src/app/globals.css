@@ -778,8 +778,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .wallet-pay { grid-template-columns: 1fr; }.wallet-pay > button { width: 100%; }.manual-fallback { align-items: flex-start; flex-direction: column; gap: 3px; }
 }
 
-/* Own-profile experience: capability-first { display: flex; align-items: center; gap: 10px; margin: 22px 0 0; padding: 11px 13px; border: 1px solid #dfcaa8; color: var(--amber); background: #fff9ed; font-size: 10px; line-height: 1.45; }
-
+/* Own-profile experience: capability-first, using the existing HitMeUp visual language. */
 .profile-identity-heading { align-items: flex-start; }.profile-title-block { min-width: 0; flex: 1; }.profile-name-line { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
 .profile-name-line h1 { margin-right: 0; }.verified-profile-badge { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #e3c2bf; border-radius: 999px; padding: 6px 8px; color: var(--red-deep); background: #fff5f3; font-size: 8px; font-weight: 900; letter-spacing: .45px; text-transform: uppercase; }
 .profile-stats { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-top: 0; background: var(--surface); }
