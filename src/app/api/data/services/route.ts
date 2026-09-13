@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertSameOriginMutation, bodyObject, dataError, inputError, withDataClient } from "../_lib";
 import { createService, listServices } from "@/lib/supabase/repository";
+import type { ListingKind } from "@/lib/types";
 
 export async function GET(request: Request) {
   try {
@@ -19,6 +20,8 @@ export async function GET(request: Request) {
       query: params.get("q") ?? undefined,
       minRating: number("minRating"),
       maxDistanceMiles: number("maxDistanceMiles"),
+      listingKind: (params.get("listingKind") ?? undefined) as ListingKind | undefined,
+      subcategory: params.get("subcategory") ?? undefined,
     }) });
   } catch (error) { return dataError(error); }
 }

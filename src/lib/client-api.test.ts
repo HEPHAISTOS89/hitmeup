@@ -34,8 +34,18 @@ describe("frontend API contract", () => {
     const [service] = await getServices({ category: "Tech help", maxDistanceMiles: 3 });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/data/services?category=Tech+help&maxDistanceMiles=3", expect.objectContaining({ credentials: "same-origin" }));
-    expect(service).toMatchObject({ price: "$18 / hour", accent: "#1d7a67", tags: ["One-off", "Available"] });
+    expect(service).toMatchObject({ category: "Services", price: "$18 / hour", accent: "#247f70", tags: ["One-off", "Available"] });
     expect(service).not.toHaveProperty("exactPoint");
+  });
+
+  it("forwards server-side marketplace filters", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ services: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await getServices({ listingKind: "permanent", subcategory: "Coffee & snacks" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/data/services?listingKind=permanent&subcategory=Coffee+%26+snacks",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
   });
 
   it("preserves backend status and error codes", async () => {

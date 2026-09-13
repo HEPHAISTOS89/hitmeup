@@ -35,7 +35,27 @@ describe("Gemini integration", () => {
   it("returns a deterministic classification when Gemini is not configured", async () => {
     const suggestion = await suggestService({ title: "Laptop repair", description: "Help with a slow computer" });
     expect(suggestion.source).toBe("deterministic-fallback");
-    expect(suggestion.category).toBe("Tech help");
+    expect(suggestion.category).toBe("Services");
+    expect(suggestion.subcategory).toBe("Tech help");
+  });
+
+  it("normalizes legacy model categories into the current taxonomy", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify({
+        category: "Tech help",
+        subcategory: "Tech help",
+        tags: ["laptop"],
+        suggestedTitle: "Laptop setup",
+        riskFlags: [],
+        searchKeywords: ["laptop"],
+      }) }] } }],
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    await expect(suggestService({ title: "Laptop setup", description: "Help with a slow computer" })).resolves.toMatchObject({
+      source: "gemini",
+      category: "Services",
+      subcategory: "Tech help",
+    });
   });
 
   it("does not hide fallback behavior behind an AI label", () => {

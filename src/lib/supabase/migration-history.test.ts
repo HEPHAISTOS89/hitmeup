@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migrations = [
@@ -8,16 +8,28 @@ const migrations = [
   ["202609120005", "profile_experience"],
 ] as const;
 
+const migrationDirectory = new URL("../../../supabase/migrations/", import.meta.url);
+const repairPath = new URL(
+  "../../../supabase/repairs/20260913040702_repair_manually_applied_hitmeup_history.sql",
+  import.meta.url,
+);
 const repair = readFileSync(
-  new URL(
-    "../../../supabase/migrations/20260913040702_repair_manually_applied_hitmeup_history.sql",
-    import.meta.url,
-  ),
+  repairPath,
   "utf8",
 );
 
-describe("Supabase production migration history repair", () => {
-  it.each(migrations)("keeps %s synchronized with its deployed statement payload", (version, name) => {
+describe("Supabase production migration history repair artifact", () => {
+  it("keeps the production-only ledger repair out of the active Development sequence", () => {
+    const repairFilename = "20260913040702_repair_manually_applied_hitmeup_history.sql";
+
+    expect(existsSync(repairPath)).toBe(true);
+    expect(readdirSync(migrationDirectory)).not.toContain(repairFilename);
+    expect(
+      existsSync(new URL(`../../../supabase/migrations/${repairFilename}`, import.meta.url)),
+    ).toBe(false);
+  });
+
+  it.each(migrations)("keeps %s synchronized with its recorded Production statement payload", (version, name) => {
     const source = readFileSync(
       new URL(`../../../supabase/migrations/${version}_${name}.sql`, import.meta.url),
       "utf8",

@@ -1,9 +1,6 @@
-export type ServiceCategory =
-  | "Tutoring"
-  | "Tech help"
-  | "Ride"
-  | "Creative"
-  | "Moving";
+import type { ListingKind, ServiceCategory } from "./service-taxonomy";
+
+export type { ListingKind, ServiceCategory } from "./service-taxonomy";
 
 export type Service = {
   id: string;
@@ -19,6 +16,9 @@ export type Service = {
   title: string;
   description: string;
   category: ServiceCategory;
+  subcategory?: string;
+  listingKind?: ListingKind;
+  sponsored?: boolean;
   price: string;
   availability: string;
   distanceMiles: number;

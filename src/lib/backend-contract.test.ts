@@ -41,6 +41,7 @@ describe("backend security contract", () => {
     await expect(appendTigerEvent({ name: "service_viewed", metadata: { view: "123MainStreet" } })).rejects.toThrow("categorical values");
     await expect(appendTigerEvent({ name: "service_viewed", metadata: { view: "123 Main Street" } })).rejects.toThrow("categorical values");
     await expect(appendTigerEvent({ name: "filter_applied", metadata: { category: "Tutoring", stage: "requested", source: "web" } })).resolves.toEqual({ status: "skipped", reason: "disabled" });
+    await expect(appendTigerEvent({ name: "filter_applied", metadata: { category: "Businesses", filter: "permanent", source: "discovery" } })).resolves.toEqual({ status: "skipped", reason: "disabled" });
   });
 
   it("uses a parameterized Tiger Postgres append with a pseudonymous actor", async () => {

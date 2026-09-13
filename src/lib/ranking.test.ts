@@ -11,8 +11,8 @@ describe("service ranking", () => {
   });
 
   it("uses category affinity as a visible ranking signal", () => {
-    const ranked = rankServices(SERVICES, ["Tech help"]);
-    expect(ranked[0].category).toBe("Tech help");
+    const ranked = rankServices(SERVICES, ["Help"]);
+    expect(ranked[0].category).toBe("Help");
     expect(ranked[0].explanation).toContain("adjusted rating");
   });
 });

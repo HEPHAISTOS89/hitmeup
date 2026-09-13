@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AvatarConfig } from "../types";
+import type { AvatarConfig, ListingKind } from "../types";
+import { isServiceCategory, subcategoriesFor } from "../service-taxonomy";
 
 export class DataValidationError extends Error {
   constructor(message: string) {
@@ -10,6 +11,7 @@ export class DataValidationError extends Error {
 
 export type ServiceInput = {
   category: string;
+  subcategory?: string;
   title: string;
   description: string;
   priceNote: string;
@@ -23,6 +25,8 @@ export type ServiceFilters = {
   query?: string;
   minRating?: number;
   maxDistanceMiles?: number;
+  listingKind?: ListingKind;
+  subcategory?: string;
 };
 
 export type ServiceRequestInput = { serviceId: string };
@@ -106,6 +110,7 @@ type PublicServiceRow = {
   id: string;
   title: string;
   category: string;
+  subcategory: string | null;
   description: string;
   price_note: string;
   availability_note: string;
@@ -120,6 +125,7 @@ type PublicServiceRow = {
   provider_rating_count: number;
   provider_completed: number;
   service_type: string;
+  sponsored: boolean;
 };
 
 function mapPublicService(row: PublicServiceRow) {
@@ -127,6 +133,7 @@ function mapPublicService(row: PublicServiceRow) {
     id: row.id,
     title: row.title,
     category: row.category,
+    subcategory: row.subcategory,
     description: row.description,
     priceNote: row.price_note,
     availability: row.availability_note,
@@ -134,6 +141,7 @@ function mapPublicService(row: PublicServiceRow) {
     approximatePosition: [Number(row.approximate_lat), Number(row.approximate_lng)] as [number, number],
     distanceMiles: Number(Number(row.approximate_distance_miles).toFixed(1)),
     type: row.service_type,
+    sponsored: row.sponsored,
     provider: {
       name: row.provider_name,
       initials: row.provider_initials,
@@ -156,11 +164,18 @@ export async function listServices(client: SupabaseClient, filters: ServiceFilte
   const query = filters.query ? requiredText(filters.query, "query", 120) : undefined;
   const minRating = optionalNumber(filters.minRating, "minRating", 0, 5);
   const maxDistanceMiles = optionalNumber(filters.maxDistanceMiles, "maxDistanceMiles", 0, 50);
-  const rows = await unwrap<PublicServiceRow[]>(client.rpc("list_public_services", {
+  const listingKind = filters.listingKind;
+  if (listingKind !== undefined && !["temporary", "permanent"].includes(listingKind)) {
+    throw new DataValidationError("listingKind is invalid.");
+  }
+  const subcategory = filters.subcategory ? requiredText(filters.subcategory, "subcategory", 80) : undefined;
+  const rows = await unwrap<PublicServiceRow[]>(client.rpc("list_public_marketplace_services", {
     target_category: category ?? null,
     target_query: query ?? null,
     target_min_rating: minRating ?? null,
     target_max_distance_miles: maxDistanceMiles ?? null,
+    target_listing_kind: listingKind ?? null,
+    target_subcategory: subcategory ?? null,
   }));
   return (rows ?? []).map(mapPublicService);
 }
@@ -221,11 +236,30 @@ function serviceRpcBody(input: ServiceInput) {
   const scheduledFor = input.scheduledFor == null ? null : new Date(input.scheduledFor);
   if (scheduledFor && Number.isNaN(scheduledFor.valueOf())) throw new DataValidationError("scheduledFor is invalid.");
   const category = requiredText(input.category, "category", 80);
-  if (!["Tutoring", "Tech help", "Ride", "Creative", "Moving", "Other"].includes(category)) {
+  const legacySubcategory: Record<string, string> = {
+    "Tech help": "Tech help",
+    Ride: "Quick ride",
+    Creative: "Photography",
+    Moving: "Moving help",
+    Other: "Other request",
+  };
+  const legacy = category in legacySubcategory;
+  if (!isServiceCategory(category) && !legacy) {
     throw new DataValidationError("category is invalid.");
+  }
+  if (category === "Businesses") throw new DataValidationError("Business listings require the reviewed sponsorship workflow.");
+  const subcategory = input.subcategory === undefined
+    ? legacySubcategory[category] ?? (isServiceCategory(category) ? subcategoriesFor(category)[0].label : null)
+    : requiredText(input.subcategory, "subcategory", 80);
+  if (isServiceCategory(category) && subcategory && !subcategoriesFor(category).some((item) => item.label === subcategory)) {
+    throw new DataValidationError("subcategory is invalid.");
+  }
+  if (legacy && subcategory !== legacySubcategory[category]) {
+    throw new DataValidationError("subcategory is invalid.");
   }
   return {
     service_category: category,
+    service_subcategory: subcategory,
     service_title: requiredText(input.title, "title", 90, 4),
     service_description: requiredText(input.description, "description", 600, 10),
     service_price_note: requiredText(input.priceNote, "priceNote", 80),

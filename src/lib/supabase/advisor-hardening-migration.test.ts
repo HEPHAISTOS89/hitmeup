@@ -24,6 +24,13 @@ describe("Supabase Advisor hardening migration", () => {
     expect(migration).toContain("as restrictive\nfor all\nto anon, authenticated\nusing (false)\nwith check (false)");
   });
 
+  it("resolves PostGIS functions in the installed extension schema", () => {
+    expect(migration).toContain("where extension_record.extname = 'postgis'");
+    expect(migration).toContain("extensions.st_estimatedextent(text, text)");
+    expect(migration).toContain("to_regprocedure(format('%I.st_estimatedextent(%s)'");
+    expect(migration).not.toContain("revoke execute on function public.st_estimatedextent");
+  });
+
   it("preserves service policy semantics without overlapping SELECT policies", () => {
     expect(migration).toContain('drop policy if exists "providers manage their services"');
     expect(migration).toContain('create policy "providers insert their services"');

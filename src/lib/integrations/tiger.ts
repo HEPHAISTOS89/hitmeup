@@ -63,7 +63,11 @@ function isEventName(value: unknown): value is TigerEventName {
 }
 
 const TIGER_METADATA_KEYS = new Set(["category", "source", "view", "filter", "stage"]);
-const SERVICE_CATEGORIES = new Set(["tutoring", "tech help", "ride", "creative", "moving", "other"]);
+const SERVICE_CATEGORIES = new Set([
+  "social", "services", "tutoring", "jobs", "volunteer", "clubs", "activities", "events", "businesses", "help",
+  // Keep accepting legacy analytics emitted by older clients during rollout.
+  "tech help", "ride", "creative", "moving", "other",
+]);
 const REQUEST_STAGES = new Set(["requested", "accepted", "meeting", "completion_pending", "rating_pending", "closed", "rejected", "cancelled"]);
 const EVENT_SOURCES = new Set(["web", "mobile", "server", "system", "gemini", "deterministic", "profile", "discovery", "request", "notification"]);
 const APP_VIEWS = new Set(["discover", "requests", "profile", "service", "chat", "avatar", "settings", "login", "onboarding"]);

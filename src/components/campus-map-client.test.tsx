@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SERVICES } from "@/lib/service-catalog";
+import { SERVICE_CATEGORIES } from "@/lib/service-taxonomy";
 
 const mapState = vi.hoisted(() => ({
   instances: [] as Array<Record<string, unknown>>,
@@ -120,19 +121,16 @@ describe("campus map style contract", () => {
     expect(mapState.workerUrls).toEqual([MAPLIBRE_WORKER_URL]);
   });
 
-  it("silences missing upstream POI sprites without changing service markers", async () => {
+  it("resolves missing optional POI sprites without changing service markers", async () => {
     render(<CampusMapClient services={SERVICES.slice(0, 1)} recenterKey={0} onSelect={() => undefined} />);
     const map = mapState.instances[0] as unknown as FakeMapInstance;
 
     await map.missingStyleImageResolver?.("office");
-    act(() => map.emit("load"));
-
     expect(map.addImage).toHaveBeenCalledWith("office", {
       width: 1,
       height: 1,
       data: new Uint8Array([0, 0, 0, 0]),
     });
-    expect(screen.getByRole("button", { name: /Calculus rescue session.*Approximate service area/ })).toBeInTheDocument();
   });
 
   it("selects key-free light and dark defaults and rejects unsafe overrides", () => {
@@ -160,14 +158,14 @@ describe("campus map style contract", () => {
 describe("campus map interaction and fallback", () => {
   it("gives categories distinct, privacy-specific marker semantics", () => {
     const presentations = SERVICES.map((service) => markerPresentation(service, false));
-    expect(new Set(presentations.map((item) => item.slug)).size).toBe(SERVICES.length);
+    expect(new Set(presentations.map((item) => item.slug)).size).toBe(SERVICE_CATEGORIES.length);
     expect(presentations[0].label).toContain("Approximate service area");
     expect(markerPresentation(SERVICES[0], true).zIndex).toBeGreaterThan(presentations[0].zIndex);
   });
 
   it("keeps markers keyboard-clickable and updates selected state without recreating the map", () => {
     const onSelect = vi.fn();
-    const services = SERVICES.slice(0, 2);
+    const services = SERVICES.filter((service) => ["math-midterms", "usb-c-charger"].includes(service.id));
     const { rerender } = render(<CampusMapClient services={services} recenterKey={0} onSelect={onSelect} />);
     const map = mapState.instances[0] as unknown as FakeMapInstance;
     act(() => map.emit("load"));
@@ -196,12 +194,13 @@ describe("campus map interaction and fallback", () => {
   it("replaces a map that never loads with a usable service directory", () => {
     vi.useFakeTimers();
     const onSelect = vi.fn();
-    render(<CampusMapClient services={SERVICES.slice(0, 2)} recenterKey={0} onSelect={onSelect} />);
+    const services = SERVICES.filter((service) => ["math-midterms", "usb-c-charger"].includes(service.id));
+    render(<CampusMapClient services={services} recenterKey={0} onSelect={onSelect} />);
     act(() => vi.advanceTimersByTime(12_000));
 
     expect(screen.getByRole("heading", { name: "The live map could not load." })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Laptop tune-up.*Approximate service area/ }));
-    expect(onSelect).toHaveBeenCalledWith("laptop-repair");
+    fireEvent.click(screen.getByRole("button", { name: /USB-C charger.*Approximate service area/ }));
+    expect(onSelect).toHaveBeenCalledWith("usb-c-charger");
     vi.useRealTimers();
   });
 

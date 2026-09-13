@@ -1,4 +1,4 @@
-import type { RankedService, Service, ServiceCategory } from "./types";
+import type { ListingKind, RankedService, Service, ServiceCategory } from "./types";
 import { rankServices } from "./ranking";
 
 export type DiscoveryFilters = {
@@ -7,6 +7,8 @@ export type DiscoveryFilters = {
   maxDistanceMiles: number;
   minimumRating: number;
   availableNow: boolean;
+  listingKind?: ListingKind | "all";
+  subcategory?: string;
 };
 
 const NOW_PATTERN = /available now|free now|today|this evening|after \d/i;
@@ -23,6 +25,7 @@ export function filterAndRankServices(
       service.title,
       service.description,
       service.category,
+      service.subcategory ?? "",
       service.provider.name,
       ...service.tags,
     ]
@@ -36,6 +39,8 @@ export function filterAndRankServices(
     ) {
       return false;
     }
+    if (filters.listingKind && filters.listingKind !== "all" && (service.listingKind ?? "temporary") !== filters.listingKind) return false;
+    if (filters.subcategory && service.subcategory !== filters.subcategory) return false;
     if (service.distanceMiles > filters.maxDistanceMiles) return false;
     if (service.provider.rating < filters.minimumRating) return false;
     if (filters.availableNow && !NOW_PATTERN.test(service.availability)) {

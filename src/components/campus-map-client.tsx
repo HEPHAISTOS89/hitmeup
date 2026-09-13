@@ -23,11 +23,16 @@ type MarkerRecord = {
 };
 
 const CATEGORY_MARKERS: Record<ServiceCategory, { glyph: string; slug: string }> = {
+  Social: { glyph: "✦", slug: "social" },
+  Services: { glyph: "⌁", slug: "services" },
   Tutoring: { glyph: "Σ", slug: "tutoring" },
-  "Tech help": { glyph: "</>", slug: "tech" },
-  Ride: { glyph: "↗", slug: "ride" },
-  Creative: { glyph: "✦", slug: "creative" },
-  Moving: { glyph: "↔", slug: "moving" },
+  Jobs: { glyph: "$", slug: "jobs" },
+  Volunteer: { glyph: "♡", slug: "volunteer" },
+  Clubs: { glyph: "♟", slug: "clubs" },
+  Activities: { glyph: "↗", slug: "activities" },
+  Events: { glyph: "◇", slug: "events" },
+  Businesses: { glyph: "▣", slug: "businesses" },
+  Help: { glyph: "?", slug: "help" },
 };
 
 function safeStyleUrl(candidate: string | undefined, fallback: string) {
@@ -232,10 +237,9 @@ export default function CampusMapClient({
         cooperativeGestures: true,
         fadeDuration: reducedMotion() ? 0 : 220,
       });
-      // Some upstream OpenFreeMap styles occasionally reference decorative POI
-      // icons that are absent from their sprite. Resolve only those missing
-      // decorations to a transparent pixel so MapLibre does not repeatedly log
-      // warnings; HitMeUp's own service markers are independent DOM elements.
+      // OpenFreeMap occasionally references optional POI decorations that are
+      // absent from its sprite. Resolve only missing style images here; source,
+      // tile, and style errors still flow through MapLibre's normal handlers.
       map.setMissingStyleImageResolver((id) => {
         if (!map.hasImage(id)) map.addImage(id, TRANSPARENT_STYLE_IMAGE);
       });

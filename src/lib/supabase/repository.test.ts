@@ -4,15 +4,19 @@ import { createService, listMessages, listMyReceivedReviews, listRequests, listS
 describe("Supabase repository boundaries", () => {
   it("loads public services through the safe RPC and maps a frontend DTO", async () => {
     const rpc = vi.fn(async () => ({ data: [{
-      id: "service", title: "Math help", category: "Tutoring", description: "Calculus review",
+      id: "service", title: "Math help", category: "Tutoring", subcategory: "Exam prep", description: "Calculus review",
       price_note: "$10", availability_note: "Tonight", scheduled_for: null,
       approximate_lat: 33.58, approximate_lng: -101.87, approximate_distance_miles: 0.42,
       provider_name: "Taylor S", provider_initials: "TS", provider_verified: true,
       provider_rating: "4.75", provider_rating_count: 12, provider_completed: 19,
-      service_type: "offer",
+      service_type: "temporary", sponsored: false,
     }], error: null }));
-    const services = await listServices({ rpc } as never, { category: "Tutoring" });
-    expect(rpc).toHaveBeenCalledWith("list_public_services", expect.objectContaining({ target_category: "Tutoring" }));
+    const services = await listServices({ rpc } as never, { category: "Tutoring", listingKind: "temporary", subcategory: "Exam prep" });
+    expect(rpc).toHaveBeenCalledWith("list_public_marketplace_services", expect.objectContaining({
+      target_category: "Tutoring",
+      target_listing_kind: "temporary",
+      target_subcategory: "Exam prep",
+    }));
     expect(services[0]).toMatchObject({
       approximatePosition: [33.58, -101.87],
       provider: { name: "Taylor S", rating: 4.75 },
@@ -40,7 +44,8 @@ describe("Supabase repository boundaries", () => {
     const rpc = vi.fn(async (...args: unknown[]) => { void args; return { data: "service-id", error: null }; });
     const client = { rpc } as never;
     await createService(client, {
-      category: "Tech help",
+      category: "Services",
+      subcategory: "Tech help",
       title: "Laptop tune-up",
       description: "Help with a slow laptop and setup.",
       priceNote: "Payment in person",
@@ -49,6 +54,7 @@ describe("Supabase repository boundaries", () => {
     });
     expect(rpc).toHaveBeenCalledWith("create_service", expect.objectContaining({
       exact_wkt: "SRID=4326;POINT(-101.871 33.581)",
+      service_subcategory: "Tech help",
     }));
     expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty("approximate_wkt");
   });
@@ -63,6 +69,41 @@ describe("Supabase repository boundaries", () => {
       availabilityNote: "Today",
       exactPoint: { latitude: 33.581, longitude: -101.871 },
     })).rejects.toThrow("category is invalid");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("keeps permanent business pins out of the student service mutation", async () => {
+    const rpc = vi.fn();
+    await expect(createService({ rpc } as never, {
+      category: "Businesses",
+      subcategory: "Restaurants",
+      title: "Campus cafe",
+      description: "A permanent restaurant listing near campus.",
+      priceNote: "Sponsored",
+      availabilityNote: "Open weekdays",
+      exactPoint: { latitude: 33.581, longitude: -101.871 },
+    })).rejects.toThrow("reviewed sponsorship workflow");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects taxonomy values that do not belong to their category", async () => {
+    const rpc = vi.fn();
+    await expect(createService({ rpc } as never, {
+      category: "Services",
+      subcategory: "Chess",
+      title: "Laptop tune-up",
+      description: "Help with a slow laptop and setup.",
+      priceNote: "$15",
+      availabilityNote: "Today",
+      exactPoint: { latitude: 33.581, longitude: -101.871 },
+    })).rejects.toThrow("subcategory is invalid");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid listing filters before contacting Supabase", async () => {
+    const rpc = vi.fn();
+    await expect(listServices({ rpc } as never, { listingKind: "sponsored" as never })).rejects.toThrow("listingKind is invalid");
+    await expect(listServices({ rpc } as never, { minRating: 6 })).rejects.toThrow("minRating is invalid");
     expect(rpc).not.toHaveBeenCalled();
   });
 

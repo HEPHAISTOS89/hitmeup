@@ -30,15 +30,41 @@ revoke execute on function public.revoke_location_after_terminal()
 revoke execute on function public.rls_auto_enable()
   from public, anon, authenticated;
 
--- PostGIS is non-relocatable in this project. Remove the three advisor-flagged
--- estimation RPCs from client roles without changing spatial behavior used by
--- HitMeUp.
-revoke execute on function public.st_estimatedextent(text, text)
-  from public, anon, authenticated;
-revoke execute on function public.st_estimatedextent(text, text, text)
-  from public, anon, authenticated;
-revoke execute on function public.st_estimatedextent(text, text, text, boolean)
-  from public, anon, authenticated;
+-- PostGIS is non-relocatable. Production historically exposed these objects in
+-- public, while the Development project installs PostGIS in extensions (for
+-- example, extensions.st_estimatedextent(text, text)). Resolve the extension's
+-- actual schema at runtime so this migration is safe in either environment and
+-- never changes the spatial types or application RPC contract.
+do $$
+declare
+  postgis_schema name;
+  signature text;
+begin
+  select namespace.nspname
+    into postgis_schema
+  from pg_extension extension_record
+  join pg_namespace namespace on namespace.oid = extension_record.extnamespace
+  where extension_record.extname = 'postgis';
+
+  if postgis_schema is null then
+    raise exception 'PostGIS extension is required before advisor hardening';
+  end if;
+
+  foreach signature in array array[
+    'text, text',
+    'text, text, text',
+    'text, text, text, boolean'
+  ] loop
+    if to_regprocedure(format('%I.st_estimatedextent(%s)', postgis_schema, signature)) is not null then
+      execute format(
+        'revoke execute on function %I.st_estimatedextent(%s) from public, anon, authenticated',
+        postgis_schema,
+        signature
+      );
+    end if;
+  end loop;
+end
+$$;
 
 -- The rate-limit table is service-role-only. An explicit restrictive deny
 -- policy documents and enforces that browser roles can never access rows.

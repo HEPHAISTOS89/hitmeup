@@ -11,7 +11,9 @@ import type {
   ServiceRequestSummary,
   SessionProjection,
   SharedLocation,
+  ListingKind,
 } from "./types";
+import { categoryAccent, isServiceCategory } from "./service-taxonomy";
 
 export class ApiError extends Error {
   constructor(
@@ -46,14 +48,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-const CATEGORY_ACCENT: Record<ServiceCategory, string> = {
-  Tutoring: "#f6b73c",
-  "Tech help": "#1d7a67",
-  Ride: "#cd5c45",
-  Creative: "#7557a8",
-  Moving: "#3473a8",
-};
-
 type BackendService = {
   id: string;
   provider: {
@@ -66,22 +60,43 @@ type BackendService = {
   };
   title: string;
   description: string;
-  category: ServiceCategory;
+  category: string;
+  subcategory?: string | null;
   priceNote: string;
   availability: string;
   scheduledFor?: string | null;
   distanceMiles: number;
   approximatePosition: [number, number];
   type?: string;
+  sponsored?: boolean;
 };
 
+const LEGACY_CATEGORY: Record<string, ServiceCategory> = {
+  "Tech help": "Services",
+  Ride: "Help",
+  Creative: "Services",
+  Moving: "Services",
+  Other: "Help",
+};
+
+function normalizeCategory(category: string): ServiceCategory {
+  if (isServiceCategory(category)) return category;
+  return LEGACY_CATEGORY[category] ?? "Help";
+}
+
 function normalizeService(service: BackendService): Service {
+  const category = normalizeCategory(service.category);
+  const permanent = service.type === "permanent" || service.type === "business" || category === "Businesses";
   return {
     ...service,
+    category,
+    subcategory: service.subcategory || undefined,
+    listingKind: permanent ? "permanent" : "temporary",
+    sponsored: permanent && Boolean(service.sponsored),
     provider: { ...service.provider, responseMinutes: 0 },
     price: service.priceNote,
-    accent: CATEGORY_ACCENT[service.category] ?? "#e7011f",
-    tags: [service.type ?? "One-off", service.scheduledFor ? "Scheduled" : "Available"],
+    accent: categoryAccent(category),
+    tags: [permanent ? "Permanent pin" : "One-off", service.scheduledFor ? "Scheduled" : "Available"],
   };
 }
 
@@ -94,12 +109,16 @@ export async function getServices(filters?: {
   query?: string;
   minRating?: number;
   maxDistanceMiles?: number;
+  listingKind?: ListingKind;
+  subcategory?: string;
 }) {
   const params = new URLSearchParams();
   if (filters?.category) params.set("category", filters.category);
   if (filters?.query) params.set("q", filters.query);
-  if (filters?.minRating) params.set("minRating", String(filters.minRating));
-  if (filters?.maxDistanceMiles) params.set("maxDistanceMiles", String(filters.maxDistanceMiles));
+  if (filters?.minRating !== undefined) params.set("minRating", String(filters.minRating));
+  if (filters?.maxDistanceMiles !== undefined) params.set("maxDistanceMiles", String(filters.maxDistanceMiles));
+  if (filters?.listingKind) params.set("listingKind", filters.listingKind);
+  if (filters?.subcategory) params.set("subcategory", filters.subcategory);
   const suffix = params.size ? `?${params}` : "";
   const result = await apiFetch<{ services: BackendService[] }>(`/api/data/services${suffix}`);
   return result.services.map(normalizeService);
@@ -107,6 +126,7 @@ export async function getServices(filters?: {
 
 export function createService(input: {
   category: ServiceCategory;
+  subcategory?: string;
   title: string;
   description: string;
   priceNote: string;
@@ -200,6 +220,7 @@ export function unlockCosmetic(productId: string, signature: string) {
 
 export type ServiceSuggestion = {
   category: string;
+  subcategory: string;
   tags: string[];
   suggestedTitle: string;
   riskFlags: string[];

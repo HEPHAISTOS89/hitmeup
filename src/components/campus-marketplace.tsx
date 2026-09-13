@@ -1,34 +1,17 @@
 "use client";
 
 import {
-  ArrowLeft,
-  BadgeCheck,
-  Bell,
-  Bike,
-  Car,
-  Check,
-  ChevronRight,
-  CircleDollarSign,
-  CalendarDays,
-  Clock3,
-  Compass,
-  Filter,
-  LocateFixed,
-  LockKeyhole,
-  MapPin,
-  MessageCircle,
-  Pencil,
-  Navigation,
-  Plus,
-  Search,
-  Send,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
-  Star,
-  TriangleAlert,
-  UserRound,
-  X,
+  ArrowLeft, BadgeDollarSign, BadgeCheck, BadgePercent, Bell, Bike, BookOpen,
+  Briefcase, Calendar, CalendarDays, Camera, Car, Check, ChevronRight, CircleDot,
+  CircleHelp, CircleDollarSign, Clock3, ClipboardCheck, Code2, Coffee, Compass,
+  Crown, Dices, Dumbbell, Filter, Gamepad2, Goal, GraduationCap, Hammer,
+  HandHelping, HeartHandshake, Languages, Laptop, LayoutGrid, Library,
+  LocateFixed, LockKeyhole, MapPin, Megaphone, MessageCircle, Mic2, Mountain,
+  Music2, Navigation, PackageOpen, Palette, PartyPopper, Pencil, PersonStanding,
+  Plus, PlugZap, Presentation, Search, Send, Scissors, Settings2, ShieldCheck,
+  ShoppingBag, Sparkles, SprayCan, Star, Store, Ticket, Trash2, Trees,
+  TriangleAlert, Trophy, UserRound, Users, Utensils, Wrench, X,
+  type LucideIcon,
 } from "lucide-react";
 import {
   useEffect,
@@ -37,6 +20,7 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
@@ -74,16 +58,32 @@ import { filterAndRankServices } from "@/lib/discovery";
 import { groupProfileActivity, profileActivityDate, profileActivityRoleLabel, providedServiceCount } from "@/lib/profile-experience";
 import { canRevealExactLocation } from "@/lib/privacy";
 import { canTransitionRequest } from "@/lib/request-state";
-import type { CosmeticProjection, NotificationProjection, ProfileProjection, ProfileReview, RequestMessage, RequestStage, Service, ServiceCategory, ServiceRequestSummary, SharedLocation } from "@/lib/types";
+import { CATEGORY_CATALOG, SERVICE_CATEGORIES, categoryAccent, categoryDefinition, isServiceCategory, subcategoriesFor, type ServiceIconName } from "@/lib/service-taxonomy";
+import type { CosmeticProjection, ListingKind, NotificationProjection, ProfileProjection, ProfileReview, RequestMessage, RequestStage, Service, ServiceCategory, ServiceRequestSummary, SharedLocation } from "@/lib/types";
 
-const CATEGORIES: Array<ServiceCategory | "All"> = [
-  "All",
-  "Tutoring",
-  "Tech help",
-  "Ride",
-  "Creative",
-  "Moving",
-];
+const CATEGORIES: Array<ServiceCategory | "All"> = ["All", ...SERVICE_CATEGORIES];
+
+const SUGGESTED_CATEGORY_ALIASES: Record<string, ServiceCategory> = {
+  "Tech help": "Services", Ride: "Help", Creative: "Services", Moving: "Services", Other: "Help",
+};
+
+const SERVICE_ICONS: Record<ServiceIconName, LucideIcon> = {
+  party: PartyPopper, wrench: Wrench, graduation: GraduationCap, briefcase: Briefcase,
+  heart: HeartHandshake, game: Gamepad2, activity: Dumbbell, ticket: Ticket, store: Store,
+  help: HandHelping, users: Users, trophy: Trophy, food: Utensils, sparkles: Sparkles,
+  camera: Camera, scissors: Scissors, laptop: Laptop, cleaning: SprayCan, hammer: Hammer,
+  book: BookOpen, code: Code2, languages: Languages, calendar: Calendar, money: BadgeDollarSign,
+  clipboard: ClipboardCheck, trash: Trash2, donations: PackageOpen, trees: Trees,
+  megaphone: Megaphone, palette: Palette, music: Music2, chess: Crown,
+  basketball: CircleDot, soccer: Goal, running: PersonStanding, mountain: Mountain, bike: Bike,
+  games: Dices, workshop: Presentation, microphone: Mic2, shopping: ShoppingBag,
+  promotion: BadgePercent, coffee: Coffee, charger: PlugZap, library: Library, question: CircleHelp,
+};
+
+function ServiceGlyph({ name, size = 20 }: { name: ServiceIconName; size?: number }) {
+  const Icon = SERVICE_ICONS[name];
+  return <Icon aria-hidden="true" size={size} strokeWidth={1.8} />;
+}
 
 const STAGE_LABEL: Record<RequestStage, string> = {
   idle: "Not requested",
@@ -150,6 +150,7 @@ type EntryTarget = EntryState | "app";
 type DataMode = "live" | "preview";
 type SurfaceMode = "default" | "loading" | "offline";
 type ChatConnection = "preview" | "connecting" | "online" | "reconnecting";
+type ListingFilter = ListingKind | "all";
 
 function profileInitials(profile: ProfileProjection | null) {
   return profile?.displayName?.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "ST";
@@ -201,13 +202,15 @@ function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
 function serviceFromRequest(request: ServiceRequestSummary): Service {
   const category = CATEGORIES.includes(request.service.category as ServiceCategory)
     ? request.service.category as ServiceCategory
-    : "Tech help";
+    : "Services";
   return {
     id: request.serviceId,
     provider: { name: request.otherParty.name, initials: request.otherParty.initials, verified: true, rating: 0, ratingCount: 0, completed: 0, responseMinutes: 0 },
     title: request.service.title,
     description: "Private request details are available to the two participants.",
     category,
+    subcategory: request.service.category,
+    listingKind: "temporary",
     price: "Coordinated directly",
     availability: "See the private conversation",
     distanceMiles: 0,
@@ -249,6 +252,8 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [view, setView] = useState<AppView>("discover");
   const [services, setServices] = useState<Service[]>(dataMode === "preview" ? SERVICES : []);
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
+  const [listingFilter, setListingFilter] = useState<ListingFilter>("all");
+  const [subcategory, setSubcategory] = useState<string>();
   const [query, setQuery] = useState("");
   const [maxDistanceMiles, setMaxDistanceMiles] = useState(3);
   const [minimumRating, setMinimumRating] = useState(0);
@@ -256,6 +261,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [selectedId, setSelectedId] = useState<string | undefined>(dataMode === "preview" ? SERVICES[0]?.id : undefined);
   const [requestOpen, setRequestOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [businessModal, setBusinessModal] = useState<Service | "sponsor" | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [stage, setStage] = useState<RequestStage>(dataMode === "preview" ? "requested" : "idle");
   const [requesterShared, setRequesterShared] = useState(false);
@@ -287,7 +293,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recenterKey, setRecenterKey] = useState(0);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>(dataMode === "live" ? "loading" : "default");
-  const [serviceDraft, setServiceDraft] = useState({ title: "", category: "Tutoring" as ServiceCategory, availability: "", description: "", price: "" });
+  const [serviceDraft, setServiceDraft] = useState({ title: "", category: "Tutoring" as ServiceCategory, subcategory: "Tutoring", availability: "", description: "", price: "" });
   const [draftReviewed, setDraftReviewed] = useState(false);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantSource, setAssistantSource] = useState<"gemini" | "deterministic-fallback" | "template">();
@@ -305,11 +311,15 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       maxDistanceMiles,
       minimumRating,
       availableNow,
+      listingKind: listingFilter,
+      subcategory,
     },
     [],
-  ), [availableNow, category, maxDistanceMiles, minimumRating, query, services]);
+  ), [availableNow, category, listingFilter, maxDistanceMiles, minimumRating, query, services, subcategory]);
 
   const presentedServices = visibleServices;
+  const selectedCategoryDefinition = category === "All" ? undefined : categoryDefinition(category);
+  const availableSubcategories = category === "All" ? [] : subcategoriesFor(category);
 
   const selected = presentedServices.find((service) => service.id === selectedId) ?? presentedServices[0];
   const currentRequest = requests.find((request) => request.id === activeRequestId);
@@ -351,6 +361,8 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
         query: query.trim() || undefined,
         minRating: minimumRating || undefined,
         maxDistanceMiles,
+        listingKind: listingFilter === "all" ? undefined : listingFilter,
+        subcategory,
       })
         .then((next) => {
           setServices(next);
@@ -364,7 +376,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
         });
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [category, dataMode, maxDistanceMiles, minimumRating, query]);
+  }, [category, dataMode, listingFilter, maxDistanceMiles, minimumRating, query, subcategory]);
 
   useEffect(() => {
     if (dataMode === "preview") return;
@@ -502,9 +514,9 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       }
       setChatConnection("connecting");
     } else if (activeRequestId && currentRequest?.serviceId !== selected?.id) {
-      // A preview starts on a sample request so the request flow is visible.
-      // Once the student picks another service, discard that sample request
-      // rather than letting its stage or conversation leak into the drawer.
+      // Preview opens on a sample request so the flow is visible. Once a
+      // different listing is selected, discard that sample state before the
+      // drawer opens instead of showing its stage or private conversation.
       clearActiveRequest();
     }
     setRequestOpen(true);
@@ -670,7 +682,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   async function useWritingAssistant() {
     setAssistantError("");
     if (dataMode === "preview") {
-      setServiceDraft({ title: "Calculus problem-set rescue", category: "Tutoring", availability: "Today after 4:30 PM", description: "One focused session for the problem you are stuck on. We will work through it together.", price: "$18 / hour" });
+      setServiceDraft({ title: "Calculus problem-set rescue", category: "Tutoring", subcategory: "Homework help", availability: "Today after 4:30 PM", description: "One focused session for the problem you are stuck on. We will work through it together.", price: "$18 / hour" });
       setAssistantSource("template");
       setDraftReviewed(false);
       return;
@@ -682,8 +694,19 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     setAssistantBusy(true);
     try {
       const suggestion = await suggestServiceDraft({ title: serviceDraft.title, description: serviceDraft.description });
-      const suggestedCategory = CATEGORIES.find((item): item is ServiceCategory => item !== "All" && item === suggestion.category);
-      setServiceDraft((current) => ({ ...current, title: suggestion.suggestedTitle || current.title, category: suggestedCategory ?? current.category }));
+      const suggestedCategory = isServiceCategory(suggestion.category)
+        ? suggestion.category
+        : SUGGESTED_CATEGORY_ALIASES[suggestion.category];
+      const suggestedSubcategory = suggestedCategory
+        ? subcategoriesFor(suggestedCategory).find((item) => item.label === suggestion.subcategory)?.label
+        : undefined;
+      setServiceDraft((current) => ({
+        ...current,
+        title: suggestion.suggestedTitle || current.title,
+        category: suggestedCategory ?? current.category,
+        subcategory: suggestedSubcategory
+          ?? (suggestedCategory ? subcategoriesFor(suggestedCategory)[0].label : current.subcategory),
+      }));
       setAssistantSource(suggestion.source);
       setDraftReviewed(false);
     } catch (error) {
@@ -705,6 +728,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
         const result = await createService({
           title: serviceDraft.title.trim(),
           category: serviceDraft.category,
+          subcategory: serviceDraft.subcategory,
           description: serviceDraft.description.trim(),
           priceNote: serviceDraft.price.trim() || "Coordinate in chat",
           availabilityNote: serviceDraft.availability.trim(),
@@ -715,7 +739,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
         setSelectedId(result.id);
         setCreateOpen(false);
         setView("discover");
-        setServiceDraft({ title: "", category: "Tutoring", availability: "", description: "", price: "" });
+        setServiceDraft({ title: "", category: "Tutoring", subcategory: "Tutoring", availability: "", description: "", price: "" });
         setDraftReviewed(false);
       });
       return;
@@ -724,19 +748,27 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       id: `local-${Date.now()}`,
       provider: { name: "You", initials: "YO", verified: true, rating: 0, ratingCount: 0, completed: 0, responseMinutes: 0 },
       title: serviceDraft.title.trim(), description: serviceDraft.description.trim(), category: serviceDraft.category,
+      subcategory: serviceDraft.subcategory, listingKind: "temporary",
       price: serviceDraft.price.trim() || "Set in chat", availability: serviceDraft.availability.trim() || "Coordinate in chat",
-      distanceMiles: 0.2, approximatePosition: [CAMPUS_CENTER[0] + 0.0011, CAMPUS_CENTER[1] - 0.001], accent: "#E7011F", tags: ["New", "In person"],
+      distanceMiles: 0.2, approximatePosition: [CAMPUS_CENTER[0] + 0.0011, CAMPUS_CENTER[1] - 0.001], accent: categoryAccent(serviceDraft.category), tags: ["New", "One-off"],
     };
     setServices((current) => [newService, ...current]);
     setSelectedId(newService.id);
     setCreateOpen(false);
     setView("discover");
-    setServiceDraft({ title: "", category: "Tutoring", availability: "", description: "", price: "" });
+    setServiceDraft({ title: "", category: "Tutoring", subcategory: "Tutoring", availability: "", description: "", price: "" });
     setDraftReviewed(false);
   }
 
   function resetFilters() {
-    setQuery(""); setCategory("All"); setMaxDistanceMiles(3); setMinimumRating(0); setAvailableNow(false);
+    setQuery(""); setCategory("All"); setListingFilter("all"); setSubcategory(undefined); setMaxDistanceMiles(3); setMinimumRating(0); setAvailableNow(false);
+  }
+
+  function selectCategoryFilter(next: ServiceCategory | "All") {
+    setCategory(next);
+    setSubcategory(undefined);
+    if (next === "Businesses") setListingFilter("permanent");
+    else if (next !== "All" && listingFilter === "permanent") setListingFilter("temporary");
   }
 
   return (
@@ -760,27 +792,49 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       {ratingBlocked && <div className="blocking-banner" role="status"><Star size={16} fill="currentColor" /> Finish your required rating to start another service.<button type="button" onClick={openActiveRequest}>Open rating</button></div>}
       {dataError && <div className="blocking-banner data-error-banner" role="alert"><TriangleAlert size={16} /> {dataError}<button type="button" onClick={() => setDataError("")}>Dismiss</button></div>}
 
-      {view === "discover" && <section className="workspace" id="discover">
-        <aside className="discovery-panel" aria-label="Service filters">
-          <div className="panel-intro"><p className="eyebrow">DISCOVER NEARBY</p><h1>Help, close by.</h1><p className="lede">Verified students. Approximate locations. Real conversations.</p></div>
-          <label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search a service" aria-label="Search services" /><kbd>⌘ K</kbd></label>
-          <div className="filter-heading"><span>Service type</span><Filter size={15} /></div>
-          <div className="category-list" aria-label="Filter by service type">{CATEGORIES.map((item) => <button className={category === item ? "selected" : ""} key={item} type="button" onClick={() => setCategory(item)}><span>{item}</span><small>{item === "All" ? services.length : services.filter((service) => service.category === item).length}</small></button>)}</div>
-          <div className="filter-controls"><label><span>Within</span><select value={maxDistanceMiles} onChange={(event) => setMaxDistanceMiles(Number(event.target.value))}><option value={1}>1 mile</option><option value={2}>2 miles</option><option value={3}>3 miles</option></select></label><label><span>Rating</span><select value={minimumRating} onChange={(event) => setMinimumRating(Number(event.target.value))}><option value={0}>Any rating</option><option value={4.5}>4.5+ stars</option><option value={4.8}>4.8+ stars</option></select></label><label className="check-row"><input type="checkbox" checked={availableNow} onChange={(event) => setAvailableNow(event.target.checked)} /><span>Available now</span></label></div>
-          <div className="privacy-note"><ShieldCheck size={19} /><div><strong>Location stays private</strong><p>Exact points unlock only after acceptance and mutual sharing.</p></div></div>
-          <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => ratingBlocked ? openActiveRequest() : setCreateOpen(true)}><Plus size={17} /> {ratingBlocked ? "Rate before offering" : "Offer a service"}</button>
-          <div className="nearby-list" aria-label="Nearby services">
-            <div className="nearby-list-heading"><span>Nearby</span><small>{presentedServices.length} found</small></div>
-            {presentedServices.slice(0, 5).map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}>{service.provider.initials}</span><span><strong>{service.title}</strong><small>{service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
-          </div>
-        </aside>
-        <section className="map-stage" aria-label="Campus services map">
-          {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate service zones…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Services are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={selected?.id} recenterKey={recenterKey} onSelect={selectService} />}
-          <div className="map-status"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"}</div>
-          <button className="locate-button" type="button" aria-label="Recenter map" onClick={() => setRecenterKey((value) => value + 1)}><LocateFixed size={17} /><span className="locate-label">Recenter</span></button>
-          {surfaceMode !== "loading" && surfaceMode !== "offline" && !selected && <EmptyState onReset={() => { resetFilters(); setSurfaceMode("default"); }} />}
+      {view === "discover" && <section className="discover-frame" id="discover">
+        <CategoryRail
+          activeCategory={category}
+          listingFilter={listingFilter}
+          services={services}
+          onCategory={selectCategoryFilter}
+          onListingFilter={(next) => {
+            setListingFilter(next);
+            setSubcategory(undefined);
+            if (next === "permanent") setCategory("Businesses");
+            else if (category === "Businesses") setCategory("All");
+          }}
+        />
+        <section className="workspace">
+          <aside className="discovery-panel" aria-label="Discovery filters">
+            <div className="panel-intro"><p className="eyebrow">DISCOVER NEARBY</p><h1>{listingFilter === "permanent" ? "Local, for longer." : "What are you up for?"}</h1><p className="lede">Plans, help, work, and useful places—organized by what you need now.</p></div>
+            <label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search plans, help, or places" aria-label="Search listings" /><kbd>⌘ K</kbd></label>
+            {selectedCategoryDefinition && <section className="category-focus" style={{ "--category-accent": selectedCategoryDefinition.accent } as CSSProperties}>
+              <div className="category-focus-title"><span><ServiceGlyph name={selectedCategoryDefinition.icon} /></span><div><strong>{selectedCategoryDefinition.label}</strong><p>{selectedCategoryDefinition.description}</p></div></div>
+              <div className="subcategory-grid" role="group" aria-label={`${selectedCategoryDefinition.label} subcategories`}>
+                {availableSubcategories.map((item) => <button key={item.label} className={subcategory === item.label ? "selected" : ""} type="button" aria-pressed={subcategory === item.label} onClick={() => setSubcategory((current) => current === item.label ? undefined : item.label)}><ServiceGlyph name={item.icon} size={16} /><span>{item.label}</span></button>)}
+              </div>
+            </section>}
+            <div className="filter-heading"><span>Fine tune</span><Filter size={15} /></div>
+            <div className="filter-controls"><label><span>Within</span><select value={maxDistanceMiles} onChange={(event) => setMaxDistanceMiles(Number(event.target.value))}><option value={1}>1 mile</option><option value={2}>2 miles</option><option value={3}>3 miles</option></select></label><label><span>Rating</span><select value={minimumRating} onChange={(event) => setMinimumRating(Number(event.target.value))}><option value={0}>Any rating</option><option value={4.5}>4.5+ stars</option><option value={4.8}>4.8+ stars</option></select></label><label className="check-row"><input type="checkbox" checked={availableNow} onChange={(event) => setAvailableNow(event.target.checked)} /><span>Available now</span></label></div>
+            <div className="privacy-note"><ShieldCheck size={19} /><div><strong>People stay approximate</strong><p>Exact meeting points unlock only after acceptance and mutual sharing.</p></div></div>
+            <div className="create-actions">
+              <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => ratingBlocked ? openActiveRequest() : setCreateOpen(true)}><Plus size={17} /> {ratingBlocked ? "Rate before posting" : "Post something temporary"}</button>
+              <button className="business-button" type="button" onClick={() => setBusinessModal("sponsor")}><Store size={17} /><span><strong>List a business</strong><small>Permanent sponsored pin</small></span><ChevronRight size={16} /></button>
+            </div>
+            <div className="nearby-list" aria-label="Nearby listings">
+              <div className="nearby-list-heading"><span>Nearby</span><small>{presentedServices.length} found</small></div>
+              {presentedServices.slice(0, 5).map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}>{service.provider.initials}</span><span><strong>{service.title}</strong><small>{service.listingKind === "permanent" ? "Permanent pin" : service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
+            </div>
+          </aside>
+          <section className="map-stage" aria-label="Campus listings map">
+            {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={selected?.id} recenterKey={recenterKey} onSelect={selectService} />}
+            <div className="map-status"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"}</div>
+            <button className="locate-button" type="button" aria-label="Recenter map" onClick={() => setRecenterKey((value) => value + 1)}><LocateFixed size={17} /><span className="locate-label">Recenter</span></button>
+            {surfaceMode !== "loading" && surfaceMode !== "offline" && !selected && <EmptyState onReset={() => { resetFilters(); setSurfaceMode("default"); }} />}
+          </section>
+          {selected && <aside className="service-inspector" aria-label="Selected listing"><ServicePeek service={selected} onRequest={openSelectedRequest} onBusiness={() => setBusinessModal(selected)} requestDisabled={ratingBlocked} /></aside>}
         </section>
-        {selected && <aside className="service-inspector" aria-label="Selected service"><ServicePeek service={selected} onRequest={openSelectedRequest} requestDisabled={ratingBlocked} /></aside>}
       </section>}
 
       {view === "requests" && <RequestsView stage={stage} selected={activeService ?? selected} onBack={() => setView("discover")} onOpen={openActiveRequest} />}
@@ -788,17 +842,34 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       <footer className="trust-strip"><span><BadgeCheck size={16} /> Student email required</span><span><LockKeyhole size={16} /> Mutual location consent</span><span><CircleDollarSign size={16} /> Pay face-to-face</span></footer>
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
       {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
+      {businessModal && <BusinessPinModal service={businessModal === "sponsor" ? undefined : businessModal} onClose={() => setBusinessModal(null)} />}
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </main>
   );
 }
 
-function ServicePeek({ service, onRequest, requestDisabled }: { service: Service; onRequest: () => void; requestDisabled: boolean }) {
-  return <article className="service-peek"><div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div><div className="service-peek-mark" style={{ background: service.accent }}><span>{service.provider.initials}</span></div><div className="service-peek-main"><div className="service-peek-top"><span>{service.category}</span><span><MapPin size={13} /> {service.distanceMiles.toFixed(1)} mi</span></div><h2>{service.title}</h2><p>{service.description}</p><div className="service-tags">{service.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><div className="provider-line"><strong>{service.provider.name}</strong>{service.provider.verified && <BadgeCheck size={14} />}{service.provider.ratingCount > 0 && <span><Star size={13} fill="currentColor" /> {service.provider.rating} ({service.provider.ratingCount})</span>}</div><div className="inspector-fact"><Clock3 size={15} /><span><small>Availability</small><strong>{service.availability}</strong></span></div><div className="inspector-fact"><ShieldCheck size={15} /><span><small>Location</small><strong>Approximate zone until mutual consent</strong></span></div></div><div className="service-peek-action"><strong>{service.price}</strong><button type="button" onClick={onRequest} disabled={requestDisabled}>{requestDisabled ? "Rate first" : "Request help"}<ChevronRight size={16} /></button></div></article>;
+function CategoryRail({ activeCategory, listingFilter, services, onCategory, onListingFilter }: { activeCategory: ServiceCategory | "All"; listingFilter: ListingFilter; services: Service[]; onCategory: (category: ServiceCategory | "All") => void; onListingFilter: (kind: ListingFilter) => void }) {
+  return <div className="discovery-toolbar" aria-label="Discovery categories">
+    <div className="listing-switch" role="group" aria-label="Listing duration">
+      <button type="button" aria-pressed={listingFilter === "all"} onClick={() => onListingFilter("all")}>Everything</button>
+      <button type="button" aria-pressed={listingFilter === "temporary"} onClick={() => onListingFilter("temporary")}><Clock3 size={14} /> Now & soon</button>
+      <button type="button" aria-pressed={listingFilter === "permanent"} onClick={() => onListingFilter("permanent")}><Store size={14} /> Permanent pins</button>
+    </div>
+    <div className="category-rail" role="group" aria-label="Browse all categories">
+      <button type="button" className={activeCategory === "All" ? "selected" : ""} aria-pressed={activeCategory === "All"} onClick={() => onCategory("All")}><span><LayoutGrid size={23} strokeWidth={1.7} /></span><strong>All</strong><small>{services.length}</small></button>
+      {CATEGORY_CATALOG.map((item) => <button type="button" key={item.id} className={activeCategory === item.id ? "selected" : ""} aria-pressed={activeCategory === item.id} onClick={() => onCategory(item.id)} style={{ "--category-accent": item.accent } as CSSProperties}><span><ServiceGlyph name={item.icon} size={23} /></span><strong>{item.shortLabel}</strong><small>{services.filter((service) => service.category === item.id).length || "Explore"}</small>{item.listingKind === "permanent" && <i>Sponsored</i>}</button>)}
+    </div>
+  </div>;
+}
+
+function ServicePeek({ service, onRequest, onBusiness, requestDisabled }: { service: Service; onRequest: () => void; onBusiness: () => void; requestDisabled: boolean }) {
+  const permanent = service.listingKind === "permanent";
+  const definition = categoryDefinition(service.category);
+  return <article className={`service-peek ${permanent ? "is-permanent" : "is-temporary"}`}><div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div><div className="service-peek-mark" style={{ background: service.accent }}><ServiceGlyph name={definition.icon} size={22} /><span>{service.provider.initials}</span></div><div className="service-peek-main"><div className="service-peek-top"><span>{definition.label}</span><span><MapPin size={13} /> {service.distanceMiles.toFixed(1)} mi</span></div><div className={`listing-badge ${permanent ? "permanent" : "temporary"}`}>{permanent ? <><Store size={13} /> Sponsored · permanent</> : <><Clock3 size={13} /> Temporary</>}</div><h2>{service.title}</h2><p>{service.description}</p>{service.subcategory && <div className="subcategory-label"><ServiceGlyph name={definition.subcategories.find((item) => item.label === service.subcategory)?.icon ?? definition.icon} size={14} /> {service.subcategory}</div>}<div className="service-tags">{service.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><div className="provider-line"><strong>{service.provider.name}</strong>{service.provider.verified && <BadgeCheck size={14} />}{service.provider.ratingCount > 0 && <span><Star size={13} fill="currentColor" /> {service.provider.rating} ({service.provider.ratingCount})</span>}</div><div className="inspector-fact"><Clock3 size={15} /><span><small>{permanent ? "Hours" : "Availability"}</small><strong>{service.availability}</strong></span></div><div className="inspector-fact"><ShieldCheck size={15} /><span><small>Location</small><strong>{permanent ? "Public only after business review" : "Approximate zone until mutual consent"}</strong></span></div></div><div className="service-peek-action"><strong>{service.price}</strong><button type="button" onClick={permanent ? onBusiness : onRequest} disabled={!permanent && requestDisabled}>{!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Request help"}<ChevronRight size={16} /></button></div></article>;
 }
 
 function EmptyState({ onReset }: { onReset: () => void }) {
-  return <div className="empty-state"><span className="empty-icon"><Search size={22} /></span><h2>No services in this radius.</h2><p>Try a wider distance or remove a filter.</p><button className="secondary-button" type="button" onClick={onReset}>Reset filters</button></div>;
+  return <div className="empty-state"><span className="empty-icon"><Search size={22} /></span><h2>Nothing matches yet.</h2><p>Try another category, widen the radius, or remove a filter.</p><button className="secondary-button" type="button" onClick={onReset}>Reset filters</button></div>;
 }
 
 function RequestsView({ stage, selected, onBack, onOpen }: { stage: RequestStage; selected?: Service; onBack: () => void; onOpen: () => void }) {
@@ -1074,7 +1145,26 @@ function RatingRow({ label, value, onChange }: { label: string; value: number; o
   return <div className="rating-row"><div><strong>{label}</strong></div><div className="stars" aria-label={`${label}: ${value} out of 5`}>{[1, 2, 3, 4, 5].map((star) => <button key={star} type="button" onClick={() => onChange(star)} aria-label={`${star} stars`}><Star size={20} fill={star <= value ? "currentColor" : "none"} /></button>)}</div></div>;
 }
 
-type ServiceDraft = { title: string; category: ServiceCategory; availability: string; description: string; price: string };
+function BusinessPinModal({ service, onClose }: { service?: Service; onClose: () => void }) {
+  const definition = service ? categoryDefinition(service.category) : categoryDefinition("Businesses");
+  return <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
+    <section className="business-modal" role="dialog" aria-modal="true" aria-labelledby="business-pin-title" onKeyDown={trapDialogFocus}>
+      <div className="drawer-header"><div><span className="drawer-kicker">SPONSORED · PERMANENT</span><h2 id="business-pin-title">{service ? service.title : "A lasting place on the campus map."}</h2></div><button className="icon-button" type="button" aria-label="Close business information" autoFocus onClick={onClose}><X size={19} /></button></div>
+      {service ? <>
+        <div className="business-identity"><span style={{ background: definition.accent }}><ServiceGlyph name={definition.icon} size={23} /></span><div><strong>{service.provider.name}</strong><small>{service.subcategory} · {service.distanceMiles.toFixed(1)} mi away</small></div></div>
+        <p className="modal-copy">{service.description}</p>
+        <div className="business-facts"><div><Clock3 size={17} /><span><small>Hours</small><strong>{service.availability}</strong></span></div><div><MapPin size={17} /><span><small>Placement</small><strong>Permanent reviewed map pin</strong></span></div></div>
+      </> : <>
+        <p className="modal-copy">Businesses do not enter the temporary student feed. They apply for a reviewed, paid placement that remains clearly labelled as sponsored.</p>
+        <ol className="sponsor-steps"><li><span>1</span><div><strong>Apply</strong><p>Share the business, category, location, and student value.</p></div></li><li><span>2</span><div><strong>Review</strong><p>We verify identity, relevance, safety, and listing quality.</p></div></li><li><span>3</span><div><strong>Sponsor</strong><p>Approved businesses complete the configured payment before publication.</p></div></li></ol>
+      </>}
+      <div className="sponsor-disclosure"><BadgeDollarSign size={19} /><div><strong>Paid placement, never disguised.</strong><p>Sponsorship buys a permanent directory pin—not student endorsement or automatic top ranking. Pricing and checkout are not connected yet.</p></div></div>
+      <div className="modal-actions"><button className="secondary-button" type="button" onClick={onClose}>Close</button>{!service && <button className="primary-action" type="button" disabled>Checkout not connected</button>}</div>
+    </section>
+  </div>;
+}
+
+type ServiceDraft = { title: string; category: ServiceCategory; subcategory: string; availability: string; description: string; price: string };
 
 function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantBusy, assistantSource, assistantError, onAssistant, onSubmit, onClose }: { draft: ServiceDraft; setDraft: Dispatch<SetStateAction<ServiceDraft>>; reviewed: boolean; setReviewed: (value: boolean) => void; assistantBusy: boolean; assistantSource?: "gemini" | "deterministic-fallback" | "template"; assistantError: string; onAssistant: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onClose: () => void }) {
   const [attempted, setAttempted] = useState(false);
@@ -1097,7 +1187,8 @@ function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantB
         <p className="modal-copy">This is not a permanent storefront. Availability and the exact task should stay specific.</p>
         <form className="service-form" onSubmit={(event) => { setAttempted(true); if (valid) onSubmit(event); else event.preventDefault(); }} noValidate>
           <label>Title <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.title.trim()} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Debug one Python assignment" />{attempted && !draft.title.trim() && <small className="field-error">Add a concise service title.</small>}</label>
-          <div className="form-row"><label>Category<select value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value as ServiceCategory }))}>{CATEGORIES.filter((item): item is ServiceCategory => item !== "All").map((item) => <option key={item}>{item}</option>)}</select></label><label>Suggested amount<input value={draft.price} onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Coordinate in chat" /><small>Paid directly between students.</small></label></div>
+          <div className="form-row"><label>Category<select value={draft.category} onChange={(event) => { const next = event.target.value as ServiceCategory; setDraft((current) => ({ ...current, category: next, subcategory: subcategoriesFor(next)[0].label })); }}>{CATEGORY_CATALOG.filter((item) => item.listingKind === "temporary").map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Type<select value={draft.subcategory} onChange={(event) => setDraft((current) => ({ ...current, subcategory: event.target.value }))}>{subcategoriesFor(draft.category).map((item) => <option key={item.label}>{item.label}</option>)}</select></label></div>
+          <label>Suggested amount<input value={draft.price} onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Free or coordinate in chat" /><small>Temporary listings can be free or paid directly between participants.</small></label>
           <label>Availability <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.availability.trim()} value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Today after 5 PM" />{attempted && !draft.availability.trim() && <small className="field-error">Say when this one-off offer is available.</small>}</label>
           <label>Description <span aria-hidden="true">*</span><textarea aria-invalid={attempted && !draft.description.trim()} rows={4} maxLength={320} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="What will the other student get?" />{attempted && !draft.description.trim() && <small className="field-error">Describe the task and its boundary.</small>}</label>
           <div className="ai-helper"><div><Sparkles size={17} /><div><strong>{assistantSource === "gemini" ? "Gemini suggestion" : assistantSource === "deterministic-fallback" ? "Rule-based fallback" : assistantSource === "template" ? "Preview template" : "Writing assistant"}</strong><p>{assistantSource ? "Suggestion applied. Review every word before publishing." : "Refine the title and category without publishing automatically."}</p></div></div><button type="button" disabled={assistantBusy} onClick={onAssistant}>{assistantBusy ? "Reviewing…" : "Suggest"}</button></div>
