@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isVerifiedStudent, sanitizeSessionUser, verifiedStudentFromSessionClaims } from "../auth0";
+import { isVerifiedStudent, microsoftConnectionName, sanitizeSessionUser, verifiedStudentFromSessionClaims } from "../auth0";
 import { deterministicSuggestion, suggestService } from "./gemini";
 import { appendTigerEvent, bindTigerActor, recordTigerEvent } from "./tiger";
 import { getCosmeticQuote, verifyCosmeticPayment } from "./solana";
@@ -10,6 +10,12 @@ afterEach(() => {
 });
 
 describe("Auth0 student boundary", () => {
+  it("routes login directly to the configured Microsoft Entra connection", () => {
+    expect(microsoftConnectionName()).toBe("ttu-development");
+    vi.stubEnv("AUTH0_MICROSOFT_CONNECTION", " ttu-production ");
+    expect(microsoftConnectionName()).toBe("ttu-production");
+  });
+
   it("keeps only the minimal profile and student-gate claims in the encrypted session", () => {
     const user = sanitizeSessionUser({
       sub: "waad|student",

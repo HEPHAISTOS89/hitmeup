@@ -13,6 +13,10 @@ export type AuthResult =
 
 let client: Auth0Client | undefined;
 
+export function microsoftConnectionName() {
+  return process.env.AUTH0_MICROSOFT_CONNECTION?.trim() || "ttu-development";
+}
+
 const SESSION_USER_CLAIMS = new Set([
   "sub",
   "email",
@@ -36,6 +40,12 @@ function getClient() {
   }
   try {
     client = new Auth0Client({
+      // HitMeUp is a Microsoft university app. Route straight to the verified
+      // Entra connection instead of exposing unrelated Auth0 database/Google
+      // choices that the post-login student gate would reject anyway.
+      authorizationParameters: {
+        connection: microsoftConnectionName(),
+      },
       // SDK v4 keeps only its default profile claims unless this hook is set.
       // Persist only the namespaced Action claims required by the student gate,
       // while discarding display data and every unrelated claim from the cookie.
