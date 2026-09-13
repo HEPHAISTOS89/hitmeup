@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 360" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Private and voluntary location sharing</title>
+  <desc id="desc">Two abstract endpoints remain inside separate approximate areas while independent controls and a shield protect any exact-location connection.</desc>
+  <path d="M136 180c54-49 96-58 144-9 48 49 90 40 144-9" stroke="#CBC7C5" stroke-width="4" stroke-linecap="round" stroke-dasharray="5 12"/>
+  <path d="M136 180c50-38 95-39 144 1 49 40 94 39 144-1" stroke="#E63E47" stroke-width="5" stroke-linecap="round" opacity=".9"/>
+  <g opacity=".9">
+    <circle cx="136" cy="180" r="86" fill="#FF7669" opacity=".08"/>
+    <circle cx="136" cy="180" r="85" stroke="#E63E47" stroke-width="2" stroke-dasharray="3 10" opacity=".45"/>
+    <circle cx="424" cy="180" r="86" fill="#FF7669" opacity=".08"/>
+    <circle cx="424" cy="180" r="85" stroke="#E63E47" stroke-width="2" stroke-dasharray="3 10" opacity=".45"/>
+  </g>
+  <g>
+    <rect x="90" y="133" width="92" height="94" rx="28" fill="#FFFFFF" stroke="#E7E2DF" stroke-width="3"/>
+    <circle cx="136" cy="174" r="26" fill="#FF7669" opacity=".14"/>
+    <circle cx="136" cy="174" r="18" stroke="#171717" stroke-width="4" stroke-dasharray="3 6"/>
+    <path d="m136 164 10 10-10 10-10-10 10-10Z" fill="#171717"/>
+    <rect x="98" y="236" width="76" height="30" rx="15" fill="#171717"/>
+    <circle cx="113" cy="251" r="9" fill="#FFFFFF"/>
+  </g>
+  <g>
+    <rect x="378" y="133" width="92" height="94" rx="28" fill="#FFFFFF" stroke="#E7E2DF" stroke-width="3"/>
+    <circle cx="424" cy="174" r="26" fill="#E63E47" opacity=".12"/>
+    <circle cx="424" cy="174" r="18" stroke="#E63E47" stroke-width="4" stroke-dasharray="3 6"/>
+    <path d="m424 164 10 10-10 10-10-10 10-10Z" fill="#E63E47"/>
+    <rect x="386" y="236" width="76" height="30" rx="15" fill="#FFE2DE" stroke="#FFB8B0" stroke-width="2"/>
+    <circle cx="401" cy="251" r="9" fill="#E63E47"/>
+  </g>
+  <path d="M280 102c23 18 45 20 45 20v54c0 38-22 61-45 73-23-12-45-35-45-73v-54s22-2 45-20Z" fill="#FFFFFF" stroke="#171717" stroke-width="5" stroke-linejoin="round"/>
+  <rect x="259" y="157" width="42" height="34" rx="10" fill="#E63E47"/>
+  <path d="M268 157v-9a12 12 0 0 1 24 0v9" stroke="#E63E47" stroke-width="7" stroke-linecap="round"/>
+  <path d="m273 174 5 5 10-11" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m280 79 6 6-6 6-6-6 6-6Z" fill="#FF7669"/>
+  <g fill="#171717">
+    <circle cx="136" cy="180" r="4"/>
+    <circle cx="424" cy="180" r="4"/>
+  </g>
+</svg>

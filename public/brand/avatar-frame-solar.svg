@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Solar amber profile frame</title><desc id="desc">Amber rays and ember nodes surround a transparent circular center.</desc>
+  <circle cx="128" cy="128" r="95" stroke="#6B2332" stroke-width="8"/>
+  <g stroke="#F6A623" stroke-width="7" stroke-linecap="round"><path d="M128 14v22M128 220v22M14 128h22M220 128h22"/><path d="m48 48 16 16M192 192l16 16M208 48l-16 16M64 192l-16 16"/></g>
+  <circle cx="128" cy="128" r="111" stroke="#FFCF66" stroke-width="4" stroke-dasharray="12 18"/>
+  <g fill="#F6A623"><circle cx="50" cy="78" r="8"/><circle cx="206" cy="178" r="8"/></g>
+</svg>

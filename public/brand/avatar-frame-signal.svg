@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Signal profile frame</title>
+  <desc id="desc">Layered signal arcs radiate around a circular profile image.</desc>
+  <circle cx="128" cy="128" r="94" stroke="#171717" stroke-width="8"/>
+  <g stroke-linecap="round">
+    <path d="M53 49a112 112 0 0 1 76-30" stroke="#E63E47" stroke-width="8"/>
+    <path d="M202 48a112 112 0 0 1 34 72" stroke="#FF7669" stroke-width="8"/>
+    <path d="M206 205a112 112 0 0 1-76 32" stroke="#E63E47" stroke-width="8"/>
+    <path d="M52 207a112 112 0 0 1-33-73" stroke="#FF7669" stroke-width="8"/>
+    <path d="M66 64a90 90 0 0 1 34-20" stroke="#FFB1A8" stroke-width="4"/>
+    <path d="M190 190a90 90 0 0 1-34 20" stroke="#FFB1A8" stroke-width="4"/>
+  </g>
+  <g fill="#171717">
+    <circle cx="39" cy="64" r="7"/>
+    <circle cx="217" cy="192" r="7"/>
+  </g>
+  <path d="m218 34 8 8-8 8-8-8 8-8Z" fill="#E63E47"/>
+  <path d="m38 206 7 7-7 7-7-7 7-7Z" fill="#FF7669"/>
+</svg>

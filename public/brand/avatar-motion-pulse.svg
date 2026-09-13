@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Pulse motion skin</title>
+  <desc id="desc">Two broken signal rings form a transparent animated profile overlay.</desc>
+  <circle cx="128" cy="128" r="112" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-dasharray="34 20 8 24" opacity=".34"/>
+  <circle cx="128" cy="128" r="104" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-dasharray="8 26 46 22" opacity=".7"/>
+  <path d="m222 55 8 8-8 8-8-8 8-8Z" fill="currentColor"/>
+  <path d="m34 185 7 7-7 7-7-7 7-7Z" fill="currentColor" opacity=".7"/>
+</svg>

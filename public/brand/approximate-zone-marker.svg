@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Approximate service area</title>
+  <desc id="desc">A soft circular area without a pointed pin indicates that the location is approximate.</desc>
+  <circle cx="60" cy="60" r="46" fill="#FF7669" opacity=".12"/>
+  <circle cx="60" cy="60" r="45" stroke="#E63E47" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 8" opacity=".72"/>
+  <circle cx="60" cy="60" r="31" fill="#FFFFFF" opacity=".92"/>
+  <circle cx="60" cy="60" r="30" stroke="#E63E47" stroke-width="3" opacity=".28"/>
+  <path d="M56 46.5h-5.1a10.3 10.3 0 1 0 0 20.6h6a7.7 7.7 0 0 0 7.7-7.7c0-1.1-.25-2.2-.72-3.18" stroke="#E63E47" stroke-width="5" stroke-linecap="round"/>
+  <path d="M64 73.5h5.1a10.3 10.3 0 1 0 0-20.6h-6a7.7 7.7 0 0 0-7.7 7.7c0 1.1.25 2.2.72 3.18" stroke="#FF7669" stroke-width="5" stroke-linecap="round"/>
+  <path d="m60 56.2 3.8 3.8-3.8 3.8-3.8-3.8 3.8-3.8Z" fill="#171717"/>
+</svg>

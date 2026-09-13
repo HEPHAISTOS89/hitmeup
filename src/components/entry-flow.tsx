@@ -1,0 +1,205 @@
+"use client";
+
+import {
+  ArrowRight,
+  BadgeCheck,
+  LoaderCircle,
+  LocateFixed,
+  LockKeyhole,
+  MapPinned,
+  RefreshCw,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { HitMeUpLogo } from "./hitmeup-logo";
+
+export type EntryState =
+  | "splash"
+  | "login"
+  | "verification"
+  | "profile"
+  | "privacy";
+
+type VerificationResult = "pending" | "success" | "failure" | "expired" | "unsupported";
+
+export function EntryFlow({
+  initialEntry,
+  onComplete,
+}: {
+  initialEntry: EntryState;
+  onComplete: () => void;
+}) {
+  const [step, setStep] = useState<EntryState>(initialEntry);
+
+  if (step === "splash") return <Arrival onContinue={() => setStep("login")} />;
+  if (step === "login") {
+    return <Login />;
+  }
+  if (step === "verification") {
+    return (
+      <Verification
+        result="pending"
+        onBack={() => setStep("login")}
+        onContinue={() => setStep("profile")}
+      />
+    );
+  }
+  if (step === "profile") return <ProfileSetup onContinue={() => setStep("privacy")} />;
+  return <PrivacySetup onContinue={onComplete} />;
+}
+
+function Arrival({ onContinue }: { onContinue: () => void }) {
+  useEffect(() => {
+    const timer = window.setTimeout(onContinue, 1200);
+    return () => window.clearTimeout(timer);
+  }, [onContinue]);
+
+  return (
+    <main className="entry-screen arrival-screen">
+      <div className="signal-field" aria-hidden="true"><i /><i /><i /><i /></div>
+      <section className="arrival-copy">
+        <HitMeUpLogo size={104} title="HitMeUp" />
+        <p className="entry-kicker">ONE-OFF HELP · STUDENTS NEARBY</p>
+        <h1>Campus is closer than it looks.</h1>
+        <p>Find a student who can help—without publishing anyone&apos;s exact location.</p>
+        <button className="text-button" type="button" onClick={onContinue}>
+          Enter HitMeUp <ArrowRight size={16} />
+        </button>
+      </section>
+    </main>
+  );
+}
+
+function Login() {
+  return (
+    <main className="entry-screen login-screen">
+      <section className="login-context" aria-label="How HitMeUp protects students">
+        <div className="login-path" aria-hidden="true"><span /><span /><span /></div>
+        <HitMeUpLogo size={68} />
+        <p className="entry-kicker">PRIVATE CAMPUS EXCHANGE</p>
+        <h1>People nearby.<br />Addresses nowhere.</h1>
+        <div className="entry-proof-list">
+          <span><BadgeCheck size={17} /> University sign-in gates the network.</span>
+          <span><MapPinned size={17} /> Discovery uses approximate service areas.</span>
+          <span><LockKeyhole size={17} /> Exact sharing is voluntary and service-scoped.</span>
+        </div>
+      </section>
+      <section className="login-panel" aria-labelledby="login-heading">
+        <div className="brand brand-dark"><HitMeUpLogo size={38} /><span><strong>HitMeUp</strong><small>Student exchange</small></span></div>
+        <p className="entry-kicker">WELCOME</p>
+        <h2 id="login-heading">Verify you belong here.</h2>
+        <p className="login-copy">Use your university Microsoft account. HitMeUp does not support Google sign-in for this initial campus flow.</p>
+        <div className="login-actions">
+          <a className="microsoft-button" href="/auth/login?returnTo=/app">
+            <span className="microsoft-mark" aria-hidden="true"><i /><i /><i /><i /></span>
+            Continue with Microsoft <ArrowRight size={17} />
+          </a>
+        </div>
+        <p className="login-footnote">University access is verified through Microsoft. Your exact location is never part of public discovery.</p>
+      </section>
+    </main>
+  );
+}
+
+function Verification({
+  result,
+  onBack,
+  onContinue,
+}: {
+  result: VerificationResult;
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  const content: Record<Exclude<VerificationResult, "pending">, { title: string; copy: string }> = {
+    success: { title: "Student status confirmed.", copy: "Only limited profile information should be public until the final identity policy is verified." },
+    failure: { title: "We could not verify this account.", copy: "Return to Microsoft and try again. No campus profile has been created." },
+    expired: { title: "That verification link expired.", copy: "Start a fresh Microsoft sign-in. Old verification state is not reused." },
+    unsupported: { title: "This school is not supported yet.", copy: "The current launch is limited to the configured university tenant." },
+  };
+
+  return (
+    <main className="entry-screen status-screen status-screen-single">
+      <section className={`status-card status-${result}`} aria-live="polite">
+        <div className="status-icon" aria-hidden="true">
+          {result === "pending" && <LoaderCircle className="spin" size={28} />}
+          {result === "success" && <BadgeCheck size={30} />}
+          {result === "failure" && <TriangleAlert size={30} />}
+          {result === "expired" && <RefreshCw size={28} />}
+          {result === "unsupported" && <ShieldCheck size={30} />}
+        </div>
+        <p className="entry-kicker">UNIVERSITY VERIFICATION</p>
+        <h1>{result === "pending" ? "Waiting for Microsoft…" : content[result].title}</h1>
+        <p>{result === "pending" ? "Complete the secure sign-in in the Microsoft window. Do not close this page." : content[result].copy}</p>
+        {result === "success" ? (
+          <button className="primary-action" type="button" onClick={onContinue}>Build my profile <ArrowRight size={16} /></button>
+        ) : result === "pending" ? null : (
+          <button className="secondary-button" type="button" onClick={onBack}>Back to sign in</button>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function ProfileSetup({ onContinue }: { onContinue: () => void }) {
+  const [name, setName] = useState("");
+  const [program, setProgram] = useState("");
+  const [error, setError] = useState("");
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!name.trim() || !program.trim()) {
+      setError("Add the name and program you want shown to other verified students.");
+      return;
+    }
+    onContinue();
+  }
+
+  return (
+    <main className="entry-screen setup-screen">
+      <section className="setup-panel">
+        <div className="step-track" aria-label="Profile setup step 1 of 2"><span className="done" /><span /></div>
+        <p className="entry-kicker">PROFILE · 1 OF 2</p>
+        <h1>Introduce the useful part of you.</h1>
+        <p className="login-copy">Your verified identity fields are not assumed public. Choose the limited profile information people need for a service.</p>
+        <form className="service-form" onSubmit={submit} noValidate>
+          <label>Display name<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" placeholder="How students should address you" /></label>
+          <label>Program or area of study<input value={program} onChange={(event) => setProgram(event.target.value)} placeholder="e.g. Computer science" /></label>
+          <label>Short introduction<textarea rows={3} maxLength={180} placeholder="Skills, languages, or the kind of help you offer" /></label>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <button className="primary-action" type="submit">Continue <ArrowRight size={16} /></button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function PrivacySetup({ onContinue }: { onContinue: () => void }) {
+  const [permission, setPermission] = useState<"unknown" | "allowed" | "denied">("unknown");
+  return (
+    <main className="entry-screen setup-screen privacy-setup">
+      <section className="setup-panel setup-panel-wide">
+        <div className="step-track" aria-label="Profile setup step 2 of 2"><span className="done" /><span className="done" /></div>
+        <div className="privacy-layout">
+          <div className="privacy-diagram" aria-hidden="true"><span className="zone-ring ring-one" /><span className="zone-ring ring-two" /><HitMeUpLogo size={54} /></div>
+          <div>
+            <p className="entry-kicker">LOCATION · 2 OF 2</p>
+            <h1>Nearby, not pinpointed.</h1>
+            <p className="login-copy">Location helps order nearby services. Before acceptance, everyone sees only an approximate area.</p>
+            <div className="entry-proof-list compact">
+              <span><MapPinned size={17} /> Public discovery: approximate zone</span>
+              <span><LockKeyhole size={17} /> Accepted service: each person chooses whether to share</span>
+              <span><ShieldCheck size={17} /> Completion: exact sharing expires</span>
+            </div>
+            {permission === "denied" && <p className="permission-note" role="status">Location is off. You can continue and search manually.</p>}
+            <div className="setup-actions">
+              <button className="primary-action" type="button" onClick={() => setPermission("allowed")}><LocateFixed size={16} /> {permission === "allowed" ? "Location allowed" : "Allow location"}</button>
+              <button className="secondary-button" type="button" onClick={() => setPermission("denied")}>Not now</button>
+            </div>
+            <button className="text-button" type="button" onClick={onContinue}>{permission === "allowed" ? "Open the map" : "Continue without location"} <ArrowRight size={16} /></button>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}

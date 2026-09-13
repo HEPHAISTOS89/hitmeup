@@ -1,0 +1,49 @@
+"use client";
+
+import { ArrowRight, LoaderCircle, ShieldCheck, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CampusMarketplace } from "./campus-marketplace";
+import { HitMeUpLogo } from "./hitmeup-logo";
+import { ApiError, getSession } from "@/lib/client-api";
+
+type GateState = "loading" | "authenticated" | "unauthenticated" | "denied" | "unavailable";
+
+export function AppGate({ preview = false }: { preview?: boolean }) {
+  const [state, setState] = useState<GateState>(preview ? "authenticated" : "loading");
+
+  useEffect(() => {
+    if (preview) return;
+    let active = true;
+    getSession()
+      .then((session) => { if (active) setState(session.authenticated ? "authenticated" : "unauthenticated"); })
+      .catch((error) => {
+        if (!active) return;
+        if (error instanceof ApiError && error.status === 401) setState("unauthenticated");
+        else if (error instanceof ApiError && error.status === 403) setState("denied");
+        else setState("unavailable");
+      });
+    return () => { active = false; };
+  }, [preview]);
+
+  if (state === "authenticated") {
+    return <CampusMarketplace initialEntry="app" dataMode={preview ? "preview" : "live"} />;
+  }
+
+  const loading = state === "loading";
+  const denied = state === "denied";
+  const unavailable = state === "unavailable";
+  return (
+    <main className="entry-screen status-screen status-screen-single">
+      <section className={`status-card ${unavailable ? "status-failure" : "status-pending"}`} aria-live="polite">
+        <HitMeUpLogo size={58} title="HitMeUp" />
+        <div className="status-icon" aria-hidden="true">
+          {loading ? <LoaderCircle className="spin" size={28} /> : unavailable ? <TriangleAlert size={30} /> : <ShieldCheck size={30} />}
+        </div>
+        <p className="entry-kicker">VERIFIED CAMPUS ACCESS</p>
+        <h1>{loading ? "Checking your student access…" : denied ? "This account is not eligible yet." : unavailable ? "Sign-in is unavailable here." : "Verify before entering."}</h1>
+        <p>{loading ? "HitMeUp is confirming the minimal session state." : denied ? "Use a verified, approved university Microsoft account. No profile or campus data was opened." : unavailable ? "This environment is missing its authentication configuration. No local account fallback is used." : "Use your university Microsoft account to access student services."}</p>
+        {!loading && <a className="primary-action" href={unavailable ? "/login" : denied ? "/auth/logout?returnTo=/login" : "/auth/login?returnTo=/app"}>{unavailable ? "Back to sign in" : denied ? "Try another account" : "Continue with Microsoft"} <ArrowRight size={16} /></a>}
+      </section>
+    </main>
+  );
+}

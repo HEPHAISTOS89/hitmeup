@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Mint relay profile frame</title><desc id="desc">Teal relay paths and mint checkpoints surround a transparent circular center.</desc>
+  <circle cx="128" cy="128" r="97" stroke="#0D4F4A" stroke-width="8"/>
+  <path d="M31 128c0-54 43-97 97-97M225 128c0 54-43 97-97 97" stroke="#36C5A2" stroke-width="11" stroke-linecap="round"/>
+  <path d="M63 63c36-36 94-36 130 0M193 193c-36 36-94 36-130 0" stroke="#B7F171" stroke-width="5" stroke-linecap="round" stroke-dasharray="28 12"/>
+  <g fill="#F9FFF9" stroke="#0D4F4A" stroke-width="5"><circle cx="31" cy="128" r="10"/><circle cx="225" cy="128" r="10"/></g>
+  <path d="m128 14 9 9-9 9-9-9 9-9ZM128 224l9 9-9 9-9-9 9-9Z" fill="#36C5A2"/>
+</svg>

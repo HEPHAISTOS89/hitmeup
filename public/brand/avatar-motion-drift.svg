@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Drift motion skin</title>
+  <desc id="desc">Four relay dots and dashed arcs form a transparent motion overlay.</desc>
+  <g stroke="currentColor" stroke-width="4" stroke-linecap="round" opacity=".42">
+    <path d="M31 108c8-39 39-70 78-78" stroke-dasharray="3 10"/>
+    <path d="M225 148c-8 39-39 70-78 78" stroke-dasharray="3 10"/>
+  </g>
+  <g fill="currentColor"><circle cx="31" cy="108" r="7"/><circle cx="109" cy="30" r="5"/><circle cx="225" cy="148" r="7"/><circle cx="147" cy="226" r="5"/></g>
+</svg>

@@ -1,0 +1,7 @@
+packages:
+  - "."
+
+allowBuilds:
+  bufferutil: false
+  unrs-resolver: true
+  utf-8-validate: false

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Relay avatar core</title>
+  <desc id="desc">Two open signal loops meet at a central diamond node on a transparent canvas.</desc>
+  <path d="M55 35H39a23 23 0 1 0 0 46h21a14 14 0 0 0 14-14c0-3-1-6-2.6-8.4" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
+  <path d="M73 93h16a23 23 0 1 0 0-46H68a14 14 0 0 0-14 14c0 3 1 6 2.6 8.4" stroke="currentColor" stroke-width="9" stroke-linecap="round" opacity=".58"/>
+  <path d="m64 54 10 10-10 10-10-10 10-10Z" fill="currentColor"/>
+</svg>

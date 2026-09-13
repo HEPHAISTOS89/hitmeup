@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Core profile frame</title>
+  <desc id="desc">A clean red and coral segmented ring for a circular profile image.</desc>
+  <circle cx="128" cy="128" r="103" stroke="#E9E4E1" stroke-width="10"/>
+  <path d="M48.5 62.6A103 103 0 0 1 191 46.1" stroke="#E63E47" stroke-width="13" stroke-linecap="round"/>
+  <path d="M207.5 193.4A103 103 0 0 1 65 209.9" stroke="#FF7669" stroke-width="13" stroke-linecap="round"/>
+  <path d="m210 44 8 8-8 8-8-8 8-8Z" fill="#171717"/>
+  <path d="m46 196 6 6-6 6-6-6 6-6Z" fill="#E63E47"/>
+</svg>

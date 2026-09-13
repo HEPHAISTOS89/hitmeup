@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Orbit profile frame</title>
+  <desc id="desc">Two angled connection orbits and relay nodes surround a circular profile image.</desc>
+  <circle cx="128" cy="128" r="96" stroke="#171717" stroke-width="8"/>
+  <ellipse cx="128" cy="128" rx="113" ry="79" transform="rotate(-28 128 128)" stroke="#E63E47" stroke-width="5" stroke-linecap="round" stroke-dasharray="108 20 40 18"/>
+  <ellipse cx="128" cy="128" rx="113" ry="79" transform="rotate(28 128 128)" stroke="#FF7669" stroke-width="3" stroke-linecap="round" stroke-dasharray="62 18 92 24" opacity=".78"/>
+  <circle cx="43" cy="58" r="13" fill="#FFFFFF" stroke="#E63E47" stroke-width="6"/>
+  <circle cx="213" cy="198" r="13" fill="#FFFFFF" stroke="#FF7669" stroke-width="6"/>
+  <path d="m204 45 8 8-8 8-8-8 8-8Z" fill="#171717"/>
+  <path d="m52 195 7 7-7 7-7-7 7-7Z" fill="#E63E47"/>
+</svg>

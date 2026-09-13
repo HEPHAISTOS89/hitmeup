@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Relay profile patch</title>
+  <desc id="desc">A compact coral patch with the HitMeUp relay symbol.</desc>
+  <path d="M64 6 110 33v62l-46 27-46-27V33L64 6Z" fill="#171717"/>
+  <path d="M60 43h-8a17 17 0 1 0 0 34h11a10 10 0 0 0 10-10c0-1.7-.4-3.3-1.1-4.8" fill="none" stroke="#E63E47" stroke-width="7" stroke-linecap="round"/>
+  <path d="M68 85h8a17 17 0 1 0 0-34H65a10 10 0 0 0-10 10c0 1.7.4 3.3 1.1 4.8" fill="none" stroke="#FF8B80" stroke-width="7" stroke-linecap="round"/>
+  <path d="m64 58 6 6-6 6-6-6 6-6Z" fill="#FFFFFF"/>
+</svg>

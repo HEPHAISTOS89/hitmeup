@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc" fill="none">
+  <title id="title">Orbit avatar core</title>
+  <desc id="desc">Crossed elliptical paths and three relay nodes form a non-human orbital mark on a transparent canvas.</desc>
+  <ellipse cx="64" cy="64" rx="45" ry="22" transform="rotate(-28 64 64)" stroke="currentColor" stroke-width="6"/>
+  <ellipse cx="64" cy="64" rx="45" ry="22" transform="rotate(28 64 64)" stroke="currentColor" stroke-width="4" opacity=".55"/>
+  <circle cx="64" cy="64" r="10" fill="currentColor"/>
+  <circle cx="29" cy="38" r="7" fill="currentColor"/>
+  <circle cx="99" cy="90" r="7" fill="currentColor" opacity=".68"/>
+</svg>
