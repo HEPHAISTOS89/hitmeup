@@ -20,6 +20,7 @@ vi.mock("./campus-marketplace", () => ({
 }));
 
 import { AppGate } from "./app-gate";
+import { ApiError } from "@/lib/client-api";
 
 const completeProfile = {
   displayName: "Alex Rivera", avatarUrl: null, bio: "Ready to help.", eduDomain: "ttu.edu", solanaWallet: null,
@@ -53,5 +54,12 @@ describe("app authentication gate", () => {
     expect(screen.getByTestId("marketplace-entry")).toHaveAttribute("data-mode", "preview");
     expect(screen.getByTestId("marketplace-entry")).toHaveAttribute("data-view", "requests");
     expect(api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("uses the SDK's absolute configured logout return for a denied account", async () => {
+    api.getSession.mockRejectedValue(new ApiError("Not eligible", 403));
+    render(<AppGate />);
+
+    expect(await screen.findByRole("link", { name: /Try another account/ })).toHaveAttribute("href", "/auth/logout");
   });
 });

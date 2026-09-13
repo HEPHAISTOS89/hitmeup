@@ -257,6 +257,34 @@ describe("temporary listing submission feedback", () => {
     );
   }
 
+  it("completes the manual preview flow and makes the new offer visible", () => {
+    render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
+    const categories = screen.getByRole("group", { name: "Browse all categories" });
+    fireEvent.click(within(categories).getByRole("button", { name: /^Services/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Post something temporary/i }));
+    const dialog = screen.getByRole("dialog", { name: "Make one useful thing findable." });
+    fireEvent.change(within(dialog).getByLabelText(/Title/), { target: { value: validDraft.title } });
+    fireEvent.change(within(dialog).getByLabelText(/Availability/), { target: { value: validDraft.availability } });
+    fireEvent.change(within(dialog).getByLabelText(/Description/), { target: { value: validDraft.description } });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /I reviewed/i }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /Publish offer/i }));
+
+    expect(screen.queryByRole("dialog", { name: "Make one useful thing findable." })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `Select ${validDraft.title}` })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `${validDraft.title}, 0.2 miles away` })).toHaveAttribute("aria-current", "true");
+  });
+
+  it("matches the repository length contract before enabling publication", () => {
+    renderCreateModal();
+    const dialog = screen.getByRole("dialog", { name: "Make one useful thing findable." });
+    expect(within(dialog).getByLabelText(/Title/)).toHaveAttribute("minlength", "4");
+    expect(within(dialog).getByLabelText(/Title/)).toHaveAttribute("maxlength", "90");
+    expect(within(dialog).getByLabelText(/Description/)).toHaveAttribute("minlength", "10");
+    expect(within(dialog).getByLabelText(/Description/)).toHaveAttribute("maxlength", "600");
+    expect(within(dialog).getByLabelText(/Availability/)).toHaveAttribute("maxlength", "120");
+    expect(within(dialog).getByLabelText(/Suggested amount/)).toHaveAttribute("maxlength", "80");
+  });
+
   it("keeps a geolocation failure visible inside the active dialog", () => {
     renderCreateModal({ submitError: "Allow location once to publish an approximate campus pin." });
 

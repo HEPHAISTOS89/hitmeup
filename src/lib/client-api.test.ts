@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRequest, explainServiceRecommendation, getCosmeticQuote, getServices, interpretDiscovery, postMessage, recordProductEvent, submitRating, suggestServiceDraft, unlockCosmetic } from "./client-api";
+import { createRequest, createService, explainServiceRecommendation, getCosmeticQuote, getServices, interpretDiscovery, postMessage, recordProductEvent, submitRating, suggestServiceDraft, unlockCosmetic } from "./client-api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -46,6 +46,27 @@ describe("frontend API contract", () => {
       "/api/data/services?listingKind=permanent&subcategory=Coffee+%26+snacks",
       expect.objectContaining({ credentials: "same-origin" }),
     );
+  });
+
+  it("posts a complete temporary service contract to the authenticated data route", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: "service-2" }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      category: "Tutoring" as const,
+      subcategory: "Exam prep",
+      title: "Calculus walkthrough",
+      description: "Review integration techniques together.",
+      priceNote: "Free",
+      availabilityNote: "Today after 5 PM",
+      exactPoint: { latitude: 33.5843, longitude: -101.8747 },
+    };
+
+    await expect(createService(input)).resolves.toEqual({ id: "service-2" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/data/services", expect.objectContaining({
+      method: "POST",
+      credentials: "same-origin",
+      body: JSON.stringify(input),
+    }));
   });
 
   it("preserves backend status and error codes", async () => {

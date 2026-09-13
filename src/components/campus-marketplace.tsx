@@ -983,9 +983,13 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
           availabilityNote: serviceDraft.availability.trim(),
           exactPoint: { latitude: position.coords.latitude, longitude: position.coords.longitude },
         });
-        const next = await getServices({ maxDistanceMiles });
+        // Reload the unfiltered feed and clear discovery filters so the offer the
+        // student just published is visibly selected instead of being hidden by
+        // a previous category, search, rating, or availability filter.
+        const next = await getServices();
         setServices(next);
         setSelectedId(result.id);
+        resetFilters();
         setCreateOpen(false);
         setView("discover");
         setServiceDraft({ title: "", category: "Tutoring", subcategory: "Tutoring", availability: "", description: "", price: "" });
@@ -1003,6 +1007,7 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     };
     setServices((current) => [newService, ...current]);
     setSelectedId(newService.id);
+    resetFilters();
     setCreateOpen(false);
     setView("discover");
     setServiceDraft({ title: "", category: "Tutoring", subcategory: "Tutoring", availability: "", description: "", price: "" });
@@ -1530,7 +1535,15 @@ export function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, ass
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [assistantConsent, setAssistantConsent] = useState(false);
   const dirty = Object.values(draft).some(Boolean);
-  const valid = Boolean(draft.title.trim() && draft.description.trim() && draft.availability.trim() && reviewed);
+  const titleLength = draft.title.trim().length;
+  const descriptionLength = draft.description.trim().length;
+  const availabilityLength = draft.availability.trim().length;
+  const priceLength = draft.price.trim().length;
+  const valid = titleLength >= 4 && titleLength <= 90
+    && descriptionLength >= 10 && descriptionLength <= 600
+    && availabilityLength >= 1 && availabilityLength <= 120
+    && priceLength <= 80
+    && reviewed;
 
   function requestClose() {
     if (dirty && !confirmDiscard) {
@@ -1546,11 +1559,11 @@ export function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, ass
         <div className="drawer-header"><div><span className="drawer-kicker">ONE-OFF OFFER</span><h2 id="create-title">Make one useful thing findable.</h2></div><button className="icon-button" type="button" aria-label="Close service form" autoFocus onClick={requestClose}><X size={19} /></button></div>
         <p className="modal-copy">This is not a permanent storefront. Availability and the exact task should stay specific.</p>
         <form className="service-form" onSubmit={(event) => { setAttempted(true); if (valid) onSubmit(event); else event.preventDefault(); }} noValidate>
-          <label>Title <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.title.trim()} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Debug one Python assignment" />{attempted && !draft.title.trim() && <small className="field-error">Add a concise service title.</small>}</label>
+          <label>Title <span aria-hidden="true">*</span><input minLength={4} maxLength={90} aria-invalid={attempted && (titleLength < 4 || titleLength > 90)} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Debug one Python assignment" />{attempted && (titleLength < 4 || titleLength > 90) && <small className="field-error">Use 4 to 90 characters.</small>}</label>
           <div className="form-row"><label>Category<select value={draft.category} onChange={(event) => { const next = event.target.value as ServiceCategory; setDraft((current) => ({ ...current, category: next, subcategory: subcategoriesFor(next)[0].label })); }}>{CATEGORY_CATALOG.filter((item) => item.listingKind === "temporary").map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Type<select value={draft.subcategory} onChange={(event) => setDraft((current) => ({ ...current, subcategory: event.target.value }))}>{subcategoriesFor(draft.category).map((item) => <option key={item.label}>{item.label}</option>)}</select></label></div>
-          <label>Suggested amount<input value={draft.price} onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Free or coordinate in chat" /><small>Temporary listings can be free or paid directly between participants.</small></label>
-          <label>Availability <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.availability.trim()} value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Today after 5 PM" />{attempted && !draft.availability.trim() && <small className="field-error">Say when this one-off offer is available.</small>}</label>
-          <label>Description <span aria-hidden="true">*</span><textarea aria-invalid={attempted && !draft.description.trim()} rows={4} maxLength={320} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="What will the other student get?" />{attempted && !draft.description.trim() && <small className="field-error">Describe the task and its boundary.</small>}</label>
+          <label>Suggested amount<input maxLength={80} aria-invalid={attempted && priceLength > 80} value={draft.price} onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Free or coordinate in chat" /><small>Temporary listings can be free or paid directly between participants.</small>{attempted && priceLength > 80 && <small className="field-error">Use at most 80 characters.</small>}</label>
+          <label>Availability <span aria-hidden="true">*</span><input maxLength={120} aria-invalid={attempted && (availabilityLength < 1 || availabilityLength > 120)} value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Today after 5 PM" />{attempted && (availabilityLength < 1 || availabilityLength > 120) && <small className="field-error">Say when this one-off offer is available.</small>}</label>
+          <label>Description <span aria-hidden="true">*</span><textarea minLength={10} maxLength={600} aria-invalid={attempted && (descriptionLength < 10 || descriptionLength > 600)} rows={4} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="What will the other student get?" />{attempted && (descriptionLength < 10 || descriptionLength > 600) && <small className="field-error">Use 10 to 600 characters.</small>}</label>
           <div className="ai-helper"><div><Sparkles size={17} /><div><strong>{assistantSource === "gemini" ? "Gemini suggestion" : assistantSource === "deterministic-fallback" ? "Rule-based fallback" : assistantSource === "template" ? "Preview template" : "Writing assistant"}</strong><p>{assistantSource ? "Suggestion applied. Review every word before publishing." : "Refine the title and category without publishing automatically."}</p></div></div><button type="button" disabled={assistantBusy || (requiresGeminiConsent && !assistantConsent)} onClick={onAssistant}>{assistantBusy ? "Reviewing…" : "Suggest"}</button></div>
           {requiresGeminiConsent && <div className="gemini-assistant-consent"><details className="gemini-data-preview"><summary>What Gemini receives</summary><dl><div><dt>Title</dt><dd>{draft.title || "—"}</dd></div><div><dt>Description</dt><dd>{draft.description || "—"}</dd></div><div><dt>Availability</dt><dd>{draft.availability || "—"}</dd></div><div><dt>Amount</dt><dd>{draft.price || "—"}</dd></div></dl></details><label className="gemini-consent" title="Do not include names, addresses, phone numbers, or private chat."><input type="checkbox" checked={assistantConsent} onChange={(event) => setAssistantConsent(event.target.checked)} /><span>Send these fields to Gemini.</span></label></div>}
           {assistantDetails && <section className={`assistant-review ${assistantDetails.riskFlags.length ? "has-risks" : "is-clear"}`} aria-label="Writing assistant review" aria-live="polite">
