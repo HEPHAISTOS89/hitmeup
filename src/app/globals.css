@@ -513,12 +513,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .stale-banner { top: 58px; width: calc(100% - 24px); justify-content: center; }
   .direction-actions { grid-template-columns: 1fr; }
 }
-/* Production portal: map-first frame with a dedicated service rail */
+/* Production portal: map-first frame. Keep only the filter rail and let the map
+   consume every remaining pixel; listing details now live in the map popup. */
 .status-screen-single { grid-template-columns: minmax(0, 1fr); }
 .status-screen-single .status-card { justify-self: center; }
 .workspace {
   position: relative;
-  grid-template-columns: minmax(276px, 302px) minmax(420px, 1fr) minmax(310px, 352px);
+  grid-template-columns: minmax(276px, 302px) minmax(0, 1fr);
   height: calc(100dvh - 116px);
   min-height: 620px;
   overflow: hidden;
