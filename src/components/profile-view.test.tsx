@@ -5,8 +5,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProfileProjection, ProfileReview, ServiceRequestSummary } from "@/lib/types";
 
-vi.mock("./avatar-studio", () => ({ AvatarStudio: () => <section aria-label="Avatar Studio mock" /> }));
-
 import { ProfileView } from "./campus-marketplace";
 
 afterEach(cleanup);
@@ -24,17 +22,16 @@ const requests: ServiceRequestSummary[] = [{
 const reviews: ProfileReview[] = [{ id: "review", score: 5, comment: "Thoughtful and on time.", createdAt: "2026-09-01T01:05:00Z", author: { name: "Jordan Lee", initials: "JL" }, service: { title: "Portfolio feedback" } }];
 
 function renderProfile(onProfileChange = vi.fn()) {
-  render(<ProfileView profile={profile} requests={requests} reviews={reviews} reviewsStatus="ready" cosmeticCatalog={[]} cosmeticsStatus="ready" previewMode onProfileChange={onProfileChange} onCatalogChange={() => undefined} onResetPreview={() => undefined} onBack={() => undefined} onSettings={() => undefined} />);
+  render(<ProfileView profile={profile} requests={requests} reviews={reviews} reviewsStatus="ready" previewMode onProfileChange={onProfileChange} onBack={() => undefined} onSettings={() => undefined} />);
   return onProfileChange;
 }
 
 describe("own profile preview", () => {
-  it("marks fixtures as local and shows role-derived activity and received review", () => {
+  it("shows role-derived activity, the received review and the avatar studio link", () => {
     renderProfile();
-    expect(screen.getByText("Local profile preview")).toBeInTheDocument();
     expect(screen.getByText("You provided")).toBeInTheDocument();
     expect(screen.getByText("Thoughtful and on time.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Avatar Studio mock")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Customize your avatar" })).toHaveAttribute("href", "/avatar?preview=1");
   });
 
   it("discards a preview draft on cancel and saves only when requested", async () => {

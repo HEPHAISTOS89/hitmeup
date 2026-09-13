@@ -9,6 +9,8 @@ export function ProfileAvatarPicture() {
     window.addEventListener("storage", read);
     return () => window.removeEventListener("storage", read);
   }, []);
+  // The picture is a data URL from localStorage, which next/image cannot optimize.
+  // eslint-disable-next-line @next/next/no-img-element
   return <img src={image ?? "/avatar-customizer/assets/character-v3.png"} alt="Your avatar" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} />;
 }
 

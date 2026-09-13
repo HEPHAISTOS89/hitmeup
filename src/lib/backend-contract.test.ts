@@ -153,14 +153,14 @@ describe("backend security contract", () => {
     expect(marketplace).toContain("preferredId && activeRequestIdRef.current !== preferredId");
   });
 
-  it("hydrates avatar changes without remounting away the saved state", () => {
-    const marketplace = readFileSync(new URL("../components/campus-marketplace.tsx", import.meta.url), "utf8");
-    const studio = readFileSync(new URL("../components/avatar-studio.tsx", import.meta.url), "utf8");
-    expect(marketplace).not.toContain("<AvatarStudio key={avatarKey}");
-    expect(studio).toContain("hydratedAvatarKey.current = Object.values(avatarConfig).join");
-    expect(studio).toContain('setAvatarSaveState("saved")');
-    expect(studio).toContain('setAvatarSaveState("idle")');
-    expect(studio).toContain("updateAvatarField(skin, item.id, setSkin)");
+  it("keeps the avatar studio isolated in a same-origin iframe with a validated resize channel", () => {
+    const studio = readFileSync(new URL("../components/legacy-avatar-studio.tsx", import.meta.url), "utf8");
+    const embed = readFileSync(new URL("../../public/avatar-customizer/embed.js", import.meta.url), "utf8");
+    expect(studio).toContain("event.origin !== window.location.origin");
+    expect(studio).toContain("event.source !== frame.current?.contentWindow");
+    expect(studio).toContain('event.data?.type !== "avatar-studio-height"');
+    expect(embed).toContain("window.location.origin");
+    expect(embed).toContain('localStorage.setItem("hmu-avatar-picture"');
   });
 
   it("distinguishes an ineligible Auth0 account from missing configuration", () => {

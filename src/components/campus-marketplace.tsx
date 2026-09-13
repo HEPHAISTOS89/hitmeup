@@ -38,7 +38,6 @@ import {
   confirmCompletion,
   createRequest,
   createService,
-  getCosmetics,
   getMessages,
   getNotifications,
   getProfile,
@@ -60,7 +59,7 @@ import { groupProfileActivity, profileActivityDate, profileActivityRoleLabel, pr
 import { canRevealExactLocation } from "@/lib/privacy";
 import { canTransitionRequest } from "@/lib/request-state";
 import { CATEGORY_CATALOG, SERVICE_CATEGORIES, categoryAccent, categoryDefinition, isServiceCategory, subcategoriesFor, type ServiceIconName } from "@/lib/service-taxonomy";
-import type { CosmeticProjection, ListingKind, NotificationProjection, ProfileProjection, ProfileReview, RequestMessage, RequestStage, Service, ServiceCategory, ServiceRequestSummary, SharedLocation } from "@/lib/types";
+import type { ListingKind, NotificationProjection, ProfileProjection, ProfileReview, RequestMessage, RequestStage, Service, ServiceCategory, ServiceRequestSummary, SharedLocation } from "@/lib/types";
 
 const CATEGORIES: Array<ServiceCategory | "All"> = ["All", ...SERVICE_CATEGORIES];
 
@@ -97,12 +96,6 @@ const STAGE_LABEL: Record<RequestStage, string> = {
   rejected: "Rejected",
   cancelled: "Cancelled",
 };
-
-const PREVIEW_COSMETICS: CosmeticProjection[] = [
-  { sku: "profile-frame", label: "Profile frame", lamports: 10_000_000, owned: true, equipped: true, network: "devnet" },
-  { sku: "campus-theme", label: "Campus theme", lamports: 20_000_000, owned: false, equipped: false, network: "devnet" },
-  { sku: "trust-badge", label: "Trust badge", lamports: 30_000_000, owned: false, equipped: false, network: "devnet" },
-];
 
 const PREVIEW_PROFILE: ProfileProjection = {
   displayName: "Taylor Garcia",
@@ -152,10 +145,6 @@ type DataMode = "live" | "preview";
 type SurfaceMode = "default" | "loading" | "offline";
 type ChatConnection = "preview" | "connecting" | "online" | "reconnecting";
 type ListingFilter = ListingKind | "all";
-
-function profileInitials(profile: ProfileProjection | null) {
-  return profile?.displayName?.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "ST";
-}
 
 function notificationCopy(notification: NotificationProjection) {
   if (notification.payload && typeof notification.payload === "object") {
@@ -250,8 +239,9 @@ export function CampusMarketplace({ initialEntry = "splash", dataMode = "live" }
 }
 
 function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
-  const [view, setView] = useState<AppView>("discover");
-  useEffect(() => { if (window.location.hash === "#profile") setView("profile"); }, []);
+  // The avatar page links back with `#profile`; the shell is mounted client-side
+  // behind AppGate, so reading the hash during initialization is safe.
+  const [view, setView] = useState<AppView>(() => typeof window !== "undefined" && window.location.hash === "#profile" ? "profile" : "discover");
   const [services, setServices] = useState<Service[]>(dataMode === "preview" ? SERVICES : []);
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
   const [listingFilter, setListingFilter] = useState<ListingFilter>("all");
@@ -282,8 +272,6 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [chatError, setChatError] = useState("");
   const [chatConnection, setChatConnection] = useState<ChatConnection>(dataMode === "preview" ? "preview" : "connecting");
-  const [cosmeticCatalog, setCosmeticCatalog] = useState<CosmeticProjection[]>(dataMode === "preview" ? PREVIEW_COSMETICS : []);
-  const [cosmeticsStatus, setCosmeticsStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
   const [requests, setRequests] = useState<ServiceRequestSummary[]>(dataMode === "preview" ? PREVIEW_REQUESTS : []);
   const [activeRequestId, setActiveRequestId] = useState<string | undefined>(dataMode === "preview" ? PREVIEW_REQUESTS[0]?.id : undefined);
   const [profile, setProfile] = useState<ProfileProjection | null>(dataMode === "preview" ? PREVIEW_PROFILE : null);
@@ -336,6 +324,11 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const exactLocationVisible = ["accepted", "meeting"].includes(stage)
     && canRevealExactLocation(stage, requesterShared, providerShared);
 
+  // A request waiting on our rating takes precedence over whatever was selected:
+  // the rating gate must show the right counterpart.
+  const requestToProject = useCallback((items: ServiceRequestSummary[], preferred: ServiceRequestSummary | undefined) =>
+    items.find((item) => item.status === "rating_pending" && !item.ratings.mine) ?? preferred, []);
+
   const applyRequestProjection = useCallback((request: ServiceRequestSummary) => {
     if (activeRequestIdRef.current !== request.id) {
       activeRequestIdRef.current = request.id;
@@ -387,13 +380,13 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     let active = true;
     const refresh = async () => {
       const requestGeneration = ++requestsFetchGeneration.current;
-      const results = await Promise.allSettled([getRequests(), getProfile(), getNotifications(), getCosmetics(), getReceivedReviews()]);
+      const results = await Promise.allSettled([getRequests(), getProfile(), getNotifications(), getReceivedReviews()]);
       if (!active) return;
       if (results[0].status === "fulfilled" && requestGeneration === requestsFetchGeneration.current) {
         const selectedRequestId = activeRequestIdRef.current;
-        const request = selectedRequestId
+        const request = requestToProject(results[0].value, selectedRequestId
           ? results[0].value.find((item) => item.id === selectedRequestId)
-          : results[0].value.find((item) => !["closed", "rejected", "cancelled"].includes(item.status)) ?? results[0].value[0];
+          : results[0].value.find((item) => !["closed", "rejected", "cancelled"].includes(item.status)) ?? results[0].value[0]);
         if (!selectedRequestId || request) {
           setRequests(results[0].value);
           if (request) applyRequestProjection(request);
@@ -402,18 +395,14 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       if (results[1].status === "fulfilled") setProfile(results[1].value);
       if (results[2].status === "fulfilled") setNotifications(results[2].value);
       if (results[3].status === "fulfilled") {
-        setCosmeticCatalog(results[3].value);
-        setCosmeticsStatus("ready");
-      } else setCosmeticsStatus("error");
-      if (results[4].status === "fulfilled") {
-        setReviews(results[4].value);
+        setReviews(results[3].value);
         setReviewsStatus("ready");
       } else setReviewsStatus("error");
     };
     void refresh();
     const interval = window.setInterval(refresh, 15_000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [applyRequestProjection, dataMode]);
+  }, [applyRequestProjection, dataMode, requestToProject]);
 
   useEffect(() => {
     if (dataMode === "preview" || !activeRequestId || stage === "idle") return;
@@ -476,14 +465,6 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     background.forEach((element) => element.setAttribute("inert", ""));
     return () => background.forEach((element) => element.removeAttribute("inert"));
   }, [createOpen, requestOpen, settingsOpen, ratingBlocked]);
-
-  useEffect(() => {
-    if (pendingRating && activeRequestId !== pendingRating.id) applyRequestProjection(pendingRating);
-  }, [pendingRating, activeRequestId, applyRequestProjection]);
-
-  useEffect(() => {
-    if (stage === "completion_pending" && requesterCompleted && providerCompleted) setStage("rating_pending");
-  }, [stage, requesterCompleted, providerCompleted]);
 
   function resetRequest() {
     setStage("idle");
@@ -569,9 +550,9 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     if (requestGeneration !== requestsFetchGeneration.current) return;
     if (preferredId && activeRequestIdRef.current !== preferredId) return;
     const selectedRequestId = preferredId ?? activeRequestIdRef.current;
-    const request = selectedRequestId
+    const request = requestToProject(next, selectedRequestId
       ? next.find((item) => item.id === selectedRequestId)
-      : next.find((item) => !["closed", "rejected", "cancelled"].includes(item.status)) ?? next[0];
+      : next.find((item) => !["closed", "rejected", "cancelled"].includes(item.status)) ?? next[0]);
     if (selectedRequestId && !request) return;
     setRequests(next);
     if (!request) return;
@@ -636,8 +617,10 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
 
   function completeService() {
     if (dataMode === "preview") {
-      if (stage === "completion_pending") setRequesterCompleted(true);
-      else transition("completion_pending");
+      if (stage === "completion_pending") {
+        setRequesterCompleted(true);
+        if (providerCompleted) setStage("rating_pending");
+      } else transition("completion_pending");
       return;
     }
     if (!activeRequestId) return;
@@ -833,7 +816,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
               {CATEGORY_CATALOG.map((item) => <button key={item.id} type="button" onClick={() => selectCategoryFilter(item.id)} style={{ "--category-accent": item.accent } as CSSProperties}><ServiceGlyph name={item.icon} size={16} /><span>{item.shortLabel}</span></button>)}
             </div>}
             {selectedCategoryDefinition && <section className="category-focus" style={{ "--category-accent": selectedCategoryDefinition.accent } as CSSProperties}>
-              <button className="back-button" type="button" style={{ marginBottom: 12 }} onClick={() => selectCategoryFilter("All")}><ArrowLeft size={14} /> Back to categories</button>
+              <button className="back-button category-back" type="button" onClick={() => selectCategoryFilter("All")}><ArrowLeft size={14} /> Back to categories</button>
               <div className="category-focus-title"><span><ServiceGlyph name={selectedCategoryDefinition.icon} /></span><div><strong>{selectedCategoryDefinition.label}</strong><p>{selectedCategoryDefinition.description}</p></div></div>
               <div className="subcategory-grid" role="group" aria-label={`${selectedCategoryDefinition.label} subcategories`}>
                 {availableSubcategories.map((item) => <button key={item.label} className={subcategory === item.label ? "selected" : ""} type="button" aria-pressed={subcategory === item.label} onClick={() => setSubcategory((current) => current === item.label ? undefined : item.label)}><ServiceGlyph name={item.icon} size={16} /><span>{item.label}</span></button>)}
@@ -861,7 +844,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       </section>}
 
       {view === "requests" && <RequestsView requests={requests} onBack={() => setView("discover")} onOpen={(request) => { applyRequestProjection(request); setRequestOpen(true); }} />}
-      {view === "profile" && <ProfileView profile={profile} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} cosmeticCatalog={cosmeticCatalog} cosmeticsStatus={cosmeticsStatus} previewMode={dataMode === "preview"} onProfileChange={setProfile} onCatalogChange={setCosmeticCatalog} onResetPreview={() => setProfile({ ...PREVIEW_PROFILE, interests: [...PREVIEW_PROFILE.interests] })} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
+      {view === "profile" && <ProfileView profile={profile} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} previewMode={dataMode === "preview"} onProfileChange={setProfile} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
       {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
       {businessModal && <BusinessPinModal service={businessModal === "sponsor" ? undefined : businessModal} onClose={() => setBusinessModal(null)} />}
@@ -891,7 +874,8 @@ function ServicePeek({ service, onRequest, onBusiness, requestDisabled }: { serv
     <article className={`service-peek ${permanent ? "is-permanent" : "is-temporary"}`}>
       <div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div>
       <div className="service-peek-mark" style={{ background: service.accent }}>
-        {service.provider.avatarUrl ? <img src={service.provider.avatarUrl} alt={`${service.provider.name}'s avatar`} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} /> : <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" role="img" aria-label={`${service.provider.name}'s avatar placeholder`}><circle cx="12" cy="8" r="4" /><path d="M4 22v-3a8 8 0 0 1 16 0v3" /></svg>}
+        {/* eslint-disable-next-line @next/next/no-img-element -- avatar URLs are user data, not static assets */}
+        {service.provider.avatarUrl ? <img className="provider-avatar-image" src={service.provider.avatarUrl} alt={`${service.provider.name}'s avatar`} /> : <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" role="img" aria-label={`${service.provider.name}'s avatar placeholder`}><circle cx="12" cy="8" r="4" /><path d="M4 22v-3a8 8 0 0 1 16 0v3" /></svg>}
       </div>
       <div className="service-peek-main">
       <div className="service-peek-top"><span>{definition.label}</span><span><MapPin size={13} /> {service.distanceMiles.toFixed(1)} mi</span></div>
@@ -950,7 +934,7 @@ function formatProfileDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-export function ProfileView({ profile, requests, reviews, reviewsStatus, cosmeticCatalog, cosmeticsStatus, previewMode, onProfileChange, onCatalogChange, onResetPreview, onBack, onSettings }: { profile: ProfileProjection | null; requests: ServiceRequestSummary[]; reviews: ProfileReview[]; reviewsStatus: "loading" | "ready" | "error"; cosmeticCatalog: CosmeticProjection[]; cosmeticsStatus: "loading" | "ready" | "error"; previewMode: boolean; onProfileChange: (profile: ProfileProjection | null) => void; onCatalogChange: (catalog: CosmeticProjection[]) => void; onResetPreview: () => void; onBack: () => void; onSettings: () => void }) {
+export function ProfileView({ profile, requests, reviews, reviewsStatus, previewMode, onProfileChange, onBack, onSettings }: { profile: ProfileProjection | null; requests: ServiceRequestSummary[]; reviews: ProfileReview[]; reviewsStatus: "loading" | "ready" | "error"; previewMode: boolean; onProfileChange: (profile: ProfileProjection | null) => void; onBack: () => void; onSettings: () => void }) {
   const displayName = profile?.displayName || "Your profile";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ displayName: "", bio: "", interests: "" });
@@ -1023,7 +1007,7 @@ export function ProfileView({ profile, requests, reviews, reviewsStatus, cosmeti
         {saveStatus === "saved" && <p className="profile-save-status" role="status">{previewMode ? "Updated in this local preview only." : "Profile updated."}</p>}
         {saveStatus === "error" && <p className="profile-save-status is-error" role="alert">The profile could not be saved. Your previous details are unchanged.</p>}
 
-        <div className="profile-experience-grid" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
+        <div className="profile-experience-grid">
           <div className="profile-main-column">
             <section className="profile-card profile-about">
               <div className="section-heading"><div><span className="section-kicker">ABOUT</span><h2>A little context.</h2></div></div>
@@ -1269,7 +1253,7 @@ function SettingsModal({ onClose, requests }: { onClose: () => void; requests: S
   }
   if (contactOpen) return (
     <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) backToSettings(); }}>
-      <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="contact-title" style={{ maxWidth: 440 }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); backToSettings(); } else trapDialogFocus(event); }}>
+      <section className="settings-modal contact-modal" role="dialog" aria-modal="true" aria-labelledby="contact-title" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); backToSettings(); } else trapDialogFocus(event); }}>
         <div className="drawer-header"><h2 id="contact-title">Contact us</h2><button ref={contactClose} className="icon-button" type="button" aria-label="Close contact window" onClick={backToSettings}><X size={19} /></button></div>
         <div className="settings-list">
           <div><span>Phone</span><a href="tel:+14696316840">(469) 631-6840</a></div>
