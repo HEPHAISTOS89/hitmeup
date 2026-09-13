@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { ReactNode } from "react";
 import type { Service } from "@/lib/types";
 
 const CampusMapClient = dynamic(() => import("./campus-map-client"), {
@@ -18,11 +19,13 @@ export function CampusMap({
   selectedId,
   recenterKey,
   onSelect,
+  popupContent,
 }: {
   services: Service[];
   selectedId?: string;
   recenterKey: number;
   onSelect: (id: string) => void;
+  popupContent?: ReactNode;
 }) {
   return (
     <CampusMapClient
@@ -30,6 +33,7 @@ export function CampusMap({
       selectedId={selectedId}
       recenterKey={recenterKey}
       onSelect={onSelect}
+      popupContent={popupContent}
     />
   );
 }

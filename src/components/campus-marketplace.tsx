@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ArrowLeft, BadgeDollarSign, BadgeCheck, BadgePercent, Bell, Bike, BookOpen,
+  ArrowLeft, ArrowRight, BadgeDollarSign, BadgeCheck, BadgePercent, Bell, Bike, BookOpen,
   Briefcase, Calendar, CalendarDays, Camera, Car, Check, ChevronRight, CircleDot,
   CircleHelp, CircleDollarSign, Clock3, ClipboardCheck, Code2, Coffee, Compass,
   Crown, Dices, Dumbbell, Filter, Gamepad2, Goal, GraduationCap, Hammer,
@@ -27,7 +27,8 @@ import {
   type SetStateAction,
 } from "react";
 import { CampusMap } from "./campus-map";
-import { AvatarStudio } from "./avatar-studio";
+import { RatingGate } from "./rating-gate";
+import { ProfileAvatarLink, ProfileAvatarPicture } from "./profile-avatar-link";
 import { EntryFlow, type EntryState } from "./entry-flow";
 import { HitMeUpLogo } from "./hitmeup-logo";
 import { ThemeToggle } from "./theme-toggle";
@@ -250,6 +251,7 @@ export function CampusMarketplace({ initialEntry = "splash", dataMode = "live" }
 
 function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [view, setView] = useState<AppView>("discover");
+  useEffect(() => { if (window.location.hash === "#profile") setView("profile"); }, []);
   const [services, setServices] = useState<Service[]>(dataMode === "preview" ? SERVICES : []);
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
   const [listingFilter, setListingFilter] = useState<ListingFilter>("all");
@@ -259,6 +261,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [minimumRating, setMinimumRating] = useState(0);
   const [availableNow, setAvailableNow] = useState(false);
   const [selectedId, setSelectedId] = useState<string | undefined>(dataMode === "preview" ? SERVICES[0]?.id : undefined);
+  const [pinOpen, setPinOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [businessModal, setBusinessModal] = useState<Service | "sponsor" | null>(null);
@@ -328,7 +331,8 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     : undefined;
   const drawerService = activeRequestId ? activeService : selected;
   const unreadCount = notifications.filter((item) => !item.readAt).length;
-  const ratingBlocked = requests.some((request) => request.status === "rating_pending" && !request.ratings.mine) || stage === "rating_pending";
+  const pendingRating = requests.find((request) => request.status === "rating_pending" && !request.ratings.mine);
+  const ratingBlocked = Boolean(pendingRating) || (stage === "rating_pending" && !currentRequest?.ratings.mine);
   const exactLocationVisible = ["accepted", "meeting"].includes(stage)
     && canRevealExactLocation(stage, requesterShared, providerShared);
 
@@ -451,7 +455,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   }, [activeRequestId, dataMode, requestOpen, stage]);
 
   useEffect(() => {
-    if (!requestOpen && !createOpen && !settingsOpen && !notificationsOpen) return;
+    if (ratingBlocked || (!requestOpen && !createOpen && !settingsOpen && !notificationsOpen)) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setRequestOpen(false);
@@ -463,15 +467,23 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     window.addEventListener("keydown", onKeyDown);
     if (requestOpen) window.setTimeout(() => drawerCloseRef.current?.focus(), 0);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createOpen, notificationsOpen, requestOpen, settingsOpen]);
+  }, [createOpen, notificationsOpen, requestOpen, settingsOpen, ratingBlocked]);
 
   useEffect(() => {
     const shell = shellRef.current;
-    if (!shell || (!requestOpen && !createOpen && !settingsOpen)) return;
-    const background = Array.from(shell.children).filter((element) => !element.classList.contains("drawer-layer"));
+    if (!shell || (!ratingBlocked && !requestOpen && !createOpen && !settingsOpen)) return;
+    const background = Array.from(shell.children).filter((element) => ratingBlocked ? !element.classList.contains("rating-gate") : !element.classList.contains("drawer-layer"));
     background.forEach((element) => element.setAttribute("inert", ""));
     return () => background.forEach((element) => element.removeAttribute("inert"));
-  }, [createOpen, requestOpen, settingsOpen]);
+  }, [createOpen, requestOpen, settingsOpen, ratingBlocked]);
+
+  useEffect(() => {
+    if (pendingRating && activeRequestId !== pendingRating.id) applyRequestProjection(pendingRating);
+  }, [pendingRating, activeRequestId, applyRequestProjection]);
+
+  useEffect(() => {
+    if (stage === "completion_pending" && requesterCompleted && providerCompleted) setStage("rating_pending");
+  }, [stage, requesterCompleted, providerCompleted]);
 
   function resetRequest() {
     setStage("idle");
@@ -530,6 +542,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       return;
     }
     setSelectedId(id);
+    setPinOpen(true);
     if (dataMode === "preview" && id !== selectedId) clearActiveRequest();
   }
 
@@ -632,7 +645,14 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   }
 
   function rateService() {
-    if (dataMode === "preview") { setRatingComment(""); transition("closed"); return; }
+    if (!Number.isInteger(requesterRating) || requesterRating < 1 || requesterRating > 5 || actionBusy) return;
+    if (dataMode === "preview") {
+      setRequests((items) => items.map((request) => request.id === activeRequestId ? { ...request, ratings: { ...request.ratings, mine: true } } : request));
+      setRatingComment("");
+      setStage(otherRatingSubmitted ? "closed" : "rating_pending");
+      setRequestOpen(false);
+      return;
+    }
     if (!activeRequestId || requesterRating < 1) return;
     void runAction(async () => {
       await submitRating(activeRequestId, requesterRating, ratingComment.trim() || undefined);
@@ -772,19 +792,19 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   }
 
   return (
-    <main ref={shellRef} className="app-shell" id="top">
+    <main ref={shellRef} className={`app-shell ${view === "requests" ? "messaging-shell" : ""}`} id="top">
+      {ratingBlocked && <RatingGate name={pendingRating?.otherParty.name ?? drawerService?.provider.name ?? "the other student"} value={requesterRating} onChange={setRequesterRating} onSubmit={rateService} busy={actionBusy || Boolean(pendingRating && pendingRating.id !== activeRequestId)} error={dataError} />}
       <header className="topbar">
-        <a className="brand" href="#discover" aria-label="HitMeUp home" onClick={() => setView("discover")}><HitMeUpLogo size={40} /><span><strong>HitMeUp</strong><small>Student exchange</small></span></a>
+        <a className="brand" href="#discover" aria-label="HitMeUp home" onClick={() => setView("discover")}><HitMeUpLogo size={40} /><span><strong>HitMeUp</strong></span></a>
         <nav className="topnav" aria-label="Primary navigation">
           <button className={view === "discover" ? "active" : ""} type="button" onClick={() => setView("discover")}><Compass size={17} /> Discover</button>
           <button className={view === "requests" ? "active" : ""} type="button" onClick={() => setView("requests")}><MessageCircle size={17} /> Requests{(ratingBlocked || unreadCount > 0) && <b className="nav-alert">{unreadCount || 1}</b>}</button>
           <button className={view === "profile" ? "active" : ""} type="button" onClick={() => setView("profile")}><UserRound size={17} /> Profile</button>
         </nav>
         <div className="top-actions">
-          {dataMode === "preview" && <span className="session-chip is-preview">Preview data</span>}
           <ThemeToggle />
           <button className="icon-button" type="button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={notificationsOpen} onClick={() => { const next = !notificationsOpen; setNotificationsOpen(next); if (next && dataMode === "live" && notifications.some((item) => !item.readAt)) void markNotificationsRead().then(() => setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })))).catch(() => undefined); }}><Bell size={19} />{unreadCount > 0 && <span className="notification-dot" />}</button>
-          <button className="avatar" type="button" aria-label="Open profile" onClick={() => setView("profile")}>{profileInitials(profile)}</button>
+          <button className="avatar" type="button" aria-label="Open profile" onClick={() => setView("profile")}><ProfileAvatarPicture /></button>
         </div>
         {notificationsOpen && <aside className="notification-popover" aria-label="Notifications"><div className="popover-heading"><span>Notifications</span><button type="button" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><X size={15} /></button></div>{notifications.length ? notifications.slice(0, 3).map((item) => <p key={item.id}><Bell size={16} /> {notificationCopy(item)}</p>) : <p><Bell size={16} /> You&apos;re all caught up. Request updates will appear here.</p>}<button className="text-button" type="button" onClick={() => { setNotificationsOpen(false); setView("requests"); }}>Open requests <ChevronRight size={15} /></button></aside>}
       </header>
@@ -807,9 +827,13 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
         />
         <section className="workspace">
           <aside className="discovery-panel" aria-label="Discovery filters">
-            <div className="panel-intro"><p className="eyebrow">DISCOVER NEARBY</p><h1>{listingFilter === "permanent" ? "Local, for longer." : "What are you up for?"}</h1><p className="lede">Plans, help, work, and useful places—organized by what you need now.</p></div>
-            <label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search plans, help, or places" aria-label="Search listings" /><kbd>⌘ K</kbd></label>
+            <div className="panel-intro"><p className="eyebrow">DISCOVER NEARBY</p><h1>{listingFilter === "permanent" ? "Local, for longer." : "What are you up for?"}</h1></div>
+            <label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search plans, help, or places" aria-label="Search listings" /></label>
+            {!selectedCategoryDefinition && <div className="subcategory-grid search-presets" role="group" aria-label="Search presets">
+              {CATEGORY_CATALOG.map((item) => <button key={item.id} type="button" onClick={() => selectCategoryFilter(item.id)} style={{ "--category-accent": item.accent } as CSSProperties}><ServiceGlyph name={item.icon} size={16} /><span>{item.shortLabel}</span></button>)}
+            </div>}
             {selectedCategoryDefinition && <section className="category-focus" style={{ "--category-accent": selectedCategoryDefinition.accent } as CSSProperties}>
+              <button className="back-button" type="button" style={{ marginBottom: 12 }} onClick={() => selectCategoryFilter("All")}><ArrowLeft size={14} /> Back to categories</button>
               <div className="category-focus-title"><span><ServiceGlyph name={selectedCategoryDefinition.icon} /></span><div><strong>{selectedCategoryDefinition.label}</strong><p>{selectedCategoryDefinition.description}</p></div></div>
               <div className="subcategory-grid" role="group" aria-label={`${selectedCategoryDefinition.label} subcategories`}>
                 {availableSubcategories.map((item) => <button key={item.label} className={subcategory === item.label ? "selected" : ""} type="button" aria-pressed={subcategory === item.label} onClick={() => setSubcategory((current) => current === item.label ? undefined : item.label)}><ServiceGlyph name={item.icon} size={16} /><span>{item.label}</span></button>)}
@@ -817,29 +841,27 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
             </section>}
             <div className="filter-heading"><span>Fine tune</span><Filter size={15} /></div>
             <div className="filter-controls"><label><span>Within</span><select value={maxDistanceMiles} onChange={(event) => setMaxDistanceMiles(Number(event.target.value))}><option value={1}>1 mile</option><option value={2}>2 miles</option><option value={3}>3 miles</option></select></label><label><span>Rating</span><select value={minimumRating} onChange={(event) => setMinimumRating(Number(event.target.value))}><option value={0}>Any rating</option><option value={4.5}>4.5+ stars</option><option value={4.8}>4.8+ stars</option></select></label><label className="check-row"><input type="checkbox" checked={availableNow} onChange={(event) => setAvailableNow(event.target.checked)} /><span>Available now</span></label></div>
-            <div className="privacy-note"><ShieldCheck size={19} /><div><strong>People stay approximate</strong><p>Exact meeting points unlock only after acceptance and mutual sharing.</p></div></div>
             <div className="create-actions">
-              <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => ratingBlocked ? openActiveRequest() : setCreateOpen(true)}><Plus size={17} /> {ratingBlocked ? "Rate before posting" : "Post something temporary"}</button>
+              <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => ratingBlocked ? openActiveRequest() : setCreateOpen(true)}><Plus size={17} /> {ratingBlocked ? "Rate before posting" : "Post a request"}</button>
               <button className="business-button" type="button" onClick={() => setBusinessModal("sponsor")}><Store size={17} /><span><strong>List a business</strong><small>Permanent sponsored pin</small></span><ChevronRight size={16} /></button>
             </div>
             <div className="nearby-list" aria-label="Nearby listings">
               <div className="nearby-list-heading"><span>Nearby</span><small>{presentedServices.length} found</small></div>
-              {presentedServices.slice(0, 5).map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}>{service.provider.initials}</span><span><strong>{service.title}</strong><small>{service.listingKind === "permanent" ? "Permanent pin" : service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
+              {presentedServices.map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}>{service.provider.initials}</span><span><strong>{service.title}</strong><small>{service.listingKind === "permanent" ? "Permanent pin" : service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
             </div>
           </aside>
           <section className="map-stage" aria-label="Campus listings map">
-            {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={selected?.id} recenterKey={recenterKey} onSelect={selectService} />}
+            {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={pinOpen ? selected?.id : undefined} recenterKey={recenterKey} onSelect={selectService} popupContent={pinOpen && selected ? <aside className="service-inspector floating-inspector" aria-label="Selected listing" onKeyDown={(event) => { if (event.key === "Escape") setPinOpen(false); }}><button className="listing-close" type="button" aria-label="Close listing" onClick={() => setPinOpen(false)}><X size={18} /></button><ServicePeek service={selected} onRequest={openSelectedRequest} onBusiness={() => setBusinessModal(selected)} requestDisabled={ratingBlocked} /></aside> : null} />}
             <div className="map-status"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"}</div>
             <button className="locate-button" type="button" aria-label="Recenter map" onClick={() => setRecenterKey((value) => value + 1)}><LocateFixed size={17} /><span className="locate-label">Recenter</span></button>
             {surfaceMode !== "loading" && surfaceMode !== "offline" && !selected && <EmptyState onReset={() => { resetFilters(); setSurfaceMode("default"); }} />}
           </section>
-          {selected && <aside className="service-inspector" aria-label="Selected listing"><ServicePeek service={selected} onRequest={openSelectedRequest} onBusiness={() => setBusinessModal(selected)} requestDisabled={ratingBlocked} /></aside>}
+
         </section>
       </section>}
 
-      {view === "requests" && <RequestsView stage={stage} selected={activeService ?? selected} onBack={() => setView("discover")} onOpen={openActiveRequest} />}
+      {view === "requests" && <RequestsView requests={requests} onBack={() => setView("discover")} onOpen={(request) => { applyRequestProjection(request); setRequestOpen(true); }} />}
       {view === "profile" && <ProfileView profile={profile} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} cosmeticCatalog={cosmeticCatalog} cosmeticsStatus={cosmeticsStatus} previewMode={dataMode === "preview"} onProfileChange={setProfile} onCatalogChange={setCosmeticCatalog} onResetPreview={() => setProfile({ ...PREVIEW_PROFILE, interests: [...PREVIEW_PROFILE.interests] })} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
-      <footer className="trust-strip"><span><BadgeCheck size={16} /> Student email required</span><span><LockKeyhole size={16} /> Mutual location consent</span><span><CircleDollarSign size={16} /> Pay face-to-face</span></footer>
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
       {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
       {businessModal && <BusinessPinModal service={businessModal === "sponsor" ? undefined : businessModal} onClose={() => setBusinessModal(null)} />}
@@ -865,27 +887,58 @@ function CategoryRail({ activeCategory, listingFilter, services, onCategory, onL
 function ServicePeek({ service, onRequest, onBusiness, requestDisabled }: { service: Service; onRequest: () => void; onBusiness: () => void; requestDisabled: boolean }) {
   const permanent = service.listingKind === "permanent";
   const definition = categoryDefinition(service.category);
-  return <article className={`service-peek ${permanent ? "is-permanent" : "is-temporary"}`}><div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div><div className="service-peek-mark" style={{ background: service.accent }}><ServiceGlyph name={definition.icon} size={22} /><span>{service.provider.initials}</span></div><div className="service-peek-main"><div className="service-peek-top"><span>{definition.label}</span><span><MapPin size={13} /> {service.distanceMiles.toFixed(1)} mi</span></div><div className={`listing-badge ${permanent ? "permanent" : "temporary"}`}>{permanent ? <><Store size={13} /> Sponsored · permanent</> : <><Clock3 size={13} /> Temporary</>}</div><h2>{service.title}</h2><p>{service.description}</p>{service.subcategory && <div className="subcategory-label"><ServiceGlyph name={definition.subcategories.find((item) => item.label === service.subcategory)?.icon ?? definition.icon} size={14} /> {service.subcategory}</div>}<div className="service-tags">{service.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><div className="provider-line"><strong>{service.provider.name}</strong>{service.provider.verified && <BadgeCheck size={14} />}{service.provider.ratingCount > 0 && <span><Star size={13} fill="currentColor" /> {service.provider.rating} ({service.provider.ratingCount})</span>}</div><div className="inspector-fact"><Clock3 size={15} /><span><small>{permanent ? "Hours" : "Availability"}</small><strong>{service.availability}</strong></span></div><div className="inspector-fact"><ShieldCheck size={15} /><span><small>Location</small><strong>{permanent ? "Public only after business review" : "Approximate zone until mutual consent"}</strong></span></div></div><div className="service-peek-action"><strong>{service.price}</strong><button type="button" onClick={permanent ? onBusiness : onRequest} disabled={!permanent && requestDisabled}>{!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Request help"}<ChevronRight size={16} /></button></div></article>;
+  return (
+    <article className={`service-peek ${permanent ? "is-permanent" : "is-temporary"}`}>
+      <div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div>
+      <div className="service-peek-mark" style={{ background: service.accent }}>
+        {service.provider.avatarUrl ? <img src={service.provider.avatarUrl} alt={`${service.provider.name}'s avatar`} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} /> : <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" role="img" aria-label={`${service.provider.name}'s avatar placeholder`}><circle cx="12" cy="8" r="4" /><path d="M4 22v-3a8 8 0 0 1 16 0v3" /></svg>}
+      </div>
+      <div className="service-peek-main">
+      <div className="service-peek-top"><span>{definition.label}</span><span><MapPin size={13} /> {service.distanceMiles.toFixed(1)} mi</span></div>
+      <div className={`listing-badge ${permanent ? "permanent" : "temporary"}`}>{permanent ? <><Store size={13} /> Sponsored · permanent</> : <><Clock3 size={13} /> Temporary request</>}</div>
+      <h2>{service.title}</h2>
+      <p>{service.description}</p>
+      {service.subcategory && <div className="subcategory-label"><ServiceGlyph name={definition.subcategories.find((item) => item.label === service.subcategory)?.icon ?? definition.icon} size={14} /> {service.subcategory}</div>}
+      <div className="service-tags">{service.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
+      <div className="provider-line"><strong>{service.provider.name}</strong>{service.provider.verified && <BadgeCheck size={14} />}{service.provider.ratingCount > 0 && <span><Star size={13} fill="currentColor" /> {service.provider.rating} ({service.provider.ratingCount})</span>}</div>
+      <div className="inspector-fact"><Clock3 size={15} /><span><small>{permanent ? "Hours" : "When"}</small><strong>{service.availability}</strong></span></div>
+      <div className="inspector-fact"><ShieldCheck size={15} /><span><small>Location</small><strong>{permanent ? "Public only after business review" : "Approximate zone until mutual consent"}</strong></span></div>
+      </div>
+      <div className="service-peek-action"><strong>{service.price}</strong><button type="button" onClick={permanent ? onBusiness : onRequest} disabled={!permanent && requestDisabled}>
+        {!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Volunteer to help"}<ChevronRight size={16} />
+      </button></div>
+    </article>
+  );
 }
 
 function EmptyState({ onReset }: { onReset: () => void }) {
   return <div className="empty-state"><span className="empty-icon"><Search size={22} /></span><h2>Nothing matches yet.</h2><p>Try another category, widen the radius, or remove a filter.</p><button className="secondary-button" type="button" onClick={onReset}>Reset filters</button></div>;
 }
 
-function RequestsView({ stage, selected, onBack, onOpen }: { stage: RequestStage; selected?: Service; onBack: () => void; onOpen: () => void }) {
+function RequestsView({ requests, onBack, onOpen }: { requests: ServiceRequestSummary[]; onBack: () => void; onOpen: (request: ServiceRequestSummary) => void }) {
   const [tab, setTab] = useState<"active" | "history">("active");
-  const active = selected && !["idle", "closed", "rejected", "cancelled"].includes(stage);
-  const terminal = selected && ["closed", "rejected", "cancelled"].includes(stage);
+  const [search, setSearch] = useState("");
+  const isHistory = (request: ServiceRequestSummary) => ["closed", "rejected", "cancelled"].includes(request.status);
+  const visible = requests.filter((request) => isHistory(request) === (tab === "history"))
+    .filter((request) => `${request.otherParty.name} ${request.service.title}`.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   return (
-    <section className="secondary-view requests-view">
-      <div className="secondary-inner">
-        <button className="back-button" type="button" onClick={onBack}><ArrowLeft size={16} /> Discover</button>
-        <p className="eyebrow">REQUESTS</p><h1>The next step, clear.</h1><p className="secondary-lede">Private conversations move from request to mutual completion—never to a public feed.</p>
-        <div className="request-tabs" role="tablist" aria-label="Request groups"><button role="tab" aria-selected={tab === "active"} onClick={() => setTab("active")}>Active</button><button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>History</button></div>
-        {tab === "active" && active && <div className="request-preview"><div><span className="request-preview-kicker">ACTIVE REQUEST</span><h2>{selected.title}</h2><p>{selected.provider.name} · {STAGE_LABEL[stage]}</p></div><button className="primary-action" type="button" onClick={onOpen}>Open request <ChevronRight size={16} /></button></div>}
-        {tab === "active" && !active && <div className="empty-wide"><MessageCircle size={22} /><strong>No active requests.</strong><p>Choose a service on the map to start a private conversation.</p><button className="secondary-button" type="button" onClick={onBack}>Find a service</button></div>}
-        {tab === "history" && terminal && <div className="request-preview history-preview"><div><span className="request-preview-kicker">SERVICE HISTORY</span><h2>{selected.title}</h2><p>{selected.provider.name} · {STAGE_LABEL[stage]}</p></div><button className="secondary-button" type="button" onClick={onOpen}>View outcome</button></div>}
-        {tab === "history" && !terminal && <div className="empty-wide"><Clock3 size={22} /><strong>No service history yet.</strong><p>Completed and cancelled services will appear here.</p></div>}
+    <section className="inbox-page" aria-label="Messages and requests">
+      <header className="inbox-header"><h1>Messages</h1><button className="text-button" type="button" onClick={onBack}>Discover <ArrowRight size={16} /></button></header>
+      <div className="inbox-tools">
+        <div className="request-tabs" role="group" aria-label="Request groups">
+          <button type="button" aria-pressed={tab === "active"} onClick={() => setTab("active")}>Active <span>{requests.filter((request) => !isHistory(request)).length}</span></button>
+          <button type="button" aria-pressed={tab === "history"} onClick={() => setTab("history")}>History <span>{requests.filter(isHistory).length}</span></button>
+        </div>
+        <label className="inbox-search"><Search size={17} /><input aria-label="Search conversations" placeholder="Search conversations" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+      </div>
+      <div className="conversation-list">
+        {visible.map((request) => <button className="conversation-row" type="button" key={request.id} onClick={() => onOpen(request)}>
+          <span className="conversation-avatar">{request.otherParty.initials}</span>
+          <span className="conversation-copy"><strong>{request.otherParty.name}</strong><span>{request.service.title}</span><small>{STAGE_LABEL[request.status]}</small></span>
+          <span className="conversation-meta"><time dateTime={request.createdAt}>{new Date(request.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time><ChevronRight size={18} /></span>
+        </button>)}
+        {!visible.length && <div className="inbox-empty"><MessageCircle size={30} /><h2>{search ? "No matching conversations" : tab === "active" ? "No conversations yet" : "No past conversations"}</h2>{!search && tab === "active" && <button className="secondary-button" type="button" onClick={onBack}>Explore requests</button>}</div>}
       </div>
     </section>
   );
@@ -946,10 +999,9 @@ export function ProfileView({ profile, requests, reviews, reviewsStatus, cosmeti
     <section className="secondary-view profile-view">
       <div className="secondary-inner wide-inner">
         <button className="back-button" type="button" onClick={onBack}><ArrowLeft size={16} /> Discover</button>
-        {previewMode && <div className="profile-preview-notice" role="status"><Sparkles size={15} /><span><strong>Local profile preview</strong> Sample activity and reviews are not live. Profile edits stay in memory and reset on reload.</span><button type="button" onClick={() => { cancelEdit(); onResetPreview(); }}>Reset sample</button></div>}
 
         <div className="profile-heading profile-identity-heading">
-          <div className="profile-avatar abstract-avatar avatar-tone-signal" aria-label="HitMeUp profile avatar"><HitMeUpLogo size={42} /></div>
+          <ProfileAvatarLink previewMode={previewMode} />
           <div className="profile-title-block"><p className="eyebrow">YOUR PROFILE</p><div className="profile-name-line"><h1>{displayName}</h1>{profile && <span className="verified-profile-badge"><BadgeCheck size={14} /> University verified</span>}</div><p className="secondary-lede">{profile?.eduDomain ? `Verified through ${profile.eduDomain}` : "Loading your verified profile…"}</p></div>
           <div className="profile-heading-actions"><button className="secondary-button" type="button" disabled={!profile} onClick={beginEdit}><Pencil size={15} /> Edit profile</button><button className="secondary-button" type="button" onClick={onSettings}><Settings2 size={15} /> Privacy & safety</button></div>
         </div>
@@ -971,7 +1023,7 @@ export function ProfileView({ profile, requests, reviews, reviewsStatus, cosmeti
         {saveStatus === "saved" && <p className="profile-save-status" role="status">{previewMode ? "Updated in this local preview only." : "Profile updated."}</p>}
         {saveStatus === "error" && <p className="profile-save-status is-error" role="alert">The profile could not be saved. Your previous details are unchanged.</p>}
 
-        <div className="profile-experience-grid">
+        <div className="profile-experience-grid" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
           <div className="profile-main-column">
             <section className="profile-card profile-about">
               <div className="section-heading"><div><span className="section-kicker">ABOUT</span><h2>A little context.</h2></div></div>
@@ -993,12 +1045,8 @@ export function ProfileView({ profile, requests, reviews, reviewsStatus, cosmeti
             </section>
           </div>
 
-          <aside className="profile-side-column"><section className="profile-card profile-boundary-card"><ShieldCheck size={22} /><span className="section-kicker">PROFILE BOUNDARY</span><h2>Useful, not revealing.</h2><p>Only your chosen name, About text, interests, aggregate reputation, and participant-scoped history are used here. Payment details and meetup locations stay in private conversations.</p><button className="text-button" type="button" onClick={onSettings}>Review privacy & safety <ChevronRight size={15} /></button></section></aside>
         </div>
 
-        <div className="profile-avatar-section">
-          <AvatarStudio profile={profile} catalog={cosmeticCatalog} catalogStatus={cosmeticsStatus} previewMode={previewMode} onProfileChange={onProfileChange} onCatalogChange={onCatalogChange} />
-        </div>
       </div>
     </section>
   );
@@ -1042,7 +1090,7 @@ function RequestDrawer({ selected, stage, role, setStage, onBeginRequest, onAcce
 
         <div className="request-summary">
           <div className="provider-avatar" style={{ background: selected.accent }}>{selected.provider.initials}</div>
-          <div><strong>{selected.provider.name}</strong><span><Star size={13} fill="currentColor" /> {selected.provider.ratingCount ? `${selected.provider.rating} · ${selected.provider.completed} completed` : "New provider"}</span></div>
+          <div><strong>{selected.provider.name}</strong><span><Star size={13} fill="currentColor" /> {selected.provider.ratingCount ? `${selected.provider.rating} · ${selected.provider.completed} completed` : "New member"}</span></div>
           <span className={`stage-pill stage-${stage}`}>{STAGE_LABEL[stage]}</span>
         </div>
 
@@ -1051,20 +1099,20 @@ function RequestDrawer({ selected, stage, role, setStage, onBeginRequest, onAcce
             <div><Clock3 size={18} /><span><strong>{selected.availability}</strong><small>Propose a time in your first message.</small></span></div>
             <div><MapPin size={18} /><span><strong>Approximate area only</strong><small>No exact point is delivered to discovery.</small></span></div>
             <div><CircleDollarSign size={18} /><span><strong>{selected.price}</strong><small>Payment happens directly between students.</small></span></div>
-            <label className="request-message-label">What do you need?<textarea rows={3} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={`Hi! Is ${selected.availability.toLowerCase()} still open?`} /></label>
-            <button className="primary-action" type="button" disabled={actionBusy} onClick={onBeginRequest}>{actionBusy ? "Sending…" : "Send request"} <Send size={16} /></button>
+            <label className="request-message-label">How can you help?<textarea rows={3} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Hi! I can help with this. Here is when I am available…" /></label>
+            <button className="primary-action" type="button" disabled={actionBusy} onClick={onBeginRequest}>{actionBusy ? "Sending…" : "Volunteer to help"} <Send size={16} /></button>
           </section>
         )}
 
-        {chatAvailable && (
+        {stage !== "idle" && (
           <section className="drawer-section chat-section">
             <div className="section-title"><span>PRIVATE CHAT</span><small className={`chat-presence chat-${chatConnection}`}><i />{chatConnection === "preview" ? "Preview" : chatConnection === "online" ? "Live" : chatConnection === "connecting" ? "Connecting" : "Reconnecting"}</small></div>
             <div className="messages" aria-live="polite" onScroll={(event) => { const element = event.currentTarget; const bottom = element.scrollHeight - element.scrollTop - element.clientHeight < 28; setAtChatBottom(bottom); if (bottom) setNewMessageCount(0); }}>
-              {messagesLoading && !messages.length ? <div className="chat-loading" role="status"><span className="map-loading-mark" /> Loading conversation…</div> : chatError && !messages.length ? <div className="chat-error" role="alert"><TriangleAlert size={17} /><span>{chatError}</span><button type="button" onClick={onRetryMessages}>Try again</button></div> : messages.length ? messages.map((item) => <div className={`message-line ${item.isMine ? "mine" : "theirs"}`} key={item.id}><span className="chat-avatar">{item.isMine ? "YOU" : selected.provider.initials}</span><div><p>{item.body}</p><time dateTime={item.createdAt}>{formatMessageTime(item.createdAt)}</time></div></div>) : <p className="empty-chat">No messages yet. Start with the exact task and a proposed time.</p>}
+              {messagesLoading && !messages.length ? <div className="chat-loading" role="status"><span className="map-loading-mark" /> Loading conversation…</div> : chatError && !messages.length ? <div className="chat-error" role="alert"><TriangleAlert size={17} /><span>{chatError}</span><button type="button" onClick={onRetryMessages}>Try again</button></div> : messages.length ? messages.map((item) => <div className={`message-line ${item.isMine ? "mine" : "theirs"}`} key={item.id}><span className="chat-avatar">{item.isMine ? "YOU" : selected.provider.initials}</span><div><p>{item.body}</p><time dateTime={item.createdAt}>{formatMessageTime(item.createdAt)}</time></div></div>) : <p className="empty-chat">{chatAvailable ? "No messages yet. Say hello to start the conversation." : "No messages in this conversation."}</p>}
               <div ref={messagesEndRef} aria-hidden="true" />
             </div>
             {newMessageCount > 0 && <button className="new-message-button" type="button" onClick={scrollToLatest}>{newMessageCount} new {newMessageCount === 1 ? "message" : "messages"} <ChevronRight size={14} /></button>}
-            <div className="message-compose"><input value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendMessage(); }} placeholder="Write a message" aria-label="Message" /><button type="button" onClick={sendMessage} disabled={!message.trim() || actionBusy} aria-label="Send message"><Send size={16} /></button></div>
+            {chatAvailable ? <div className="message-compose"><input value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendMessage(); }} placeholder="Write a message" aria-label="Message" /><button type="button" onClick={sendMessage} disabled={!message.trim() || actionBusy} aria-label="Send message"><Send size={16} /></button></div> : <p className="chat-readonly">This conversation is read-only.</p>}
           </section>
         )}
 
@@ -1183,20 +1231,20 @@ function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantB
   return (
     <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) requestClose(); }}>
       <section className="create-modal" role="dialog" aria-modal="true" aria-labelledby="create-title" onKeyDown={trapDialogFocus}>
-        <div className="drawer-header"><div><span className="drawer-kicker">ONE-OFF OFFER</span><h2 id="create-title">Make one useful thing findable.</h2></div><button className="icon-button" type="button" aria-label="Close service form" autoFocus onClick={requestClose}><X size={19} /></button></div>
-        <p className="modal-copy">This is not a permanent storefront. Availability and the exact task should stay specific.</p>
+        <div className="drawer-header"><div><span className="drawer-kicker">TEMPORARY REQUEST</span><h2 id="create-title">What do you need?</h2></div><button className="icon-button" type="button" aria-label="Close service form" autoFocus onClick={requestClose}><X size={19} /></button></div>
+        <p className="modal-copy">Post what you need. Nearby students can volunteer to help.</p>
         <form className="service-form" onSubmit={(event) => { setAttempted(true); if (valid) onSubmit(event); else event.preventDefault(); }} noValidate>
-          <label>Title <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.title.trim()} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Debug one Python assignment" />{attempted && !draft.title.trim() && <small className="field-error">Add a concise service title.</small>}</label>
+          <label>Title <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.title.trim()} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="I need help debugging my Python assignment" />{attempted && !draft.title.trim() && <small className="field-error">Describe what you need.</small>}</label>
           <div className="form-row"><label>Category<select value={draft.category} onChange={(event) => { const next = event.target.value as ServiceCategory; setDraft((current) => ({ ...current, category: next, subcategory: subcategoriesFor(next)[0].label })); }}>{CATEGORY_CATALOG.filter((item) => item.listingKind === "temporary").map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Type<select value={draft.subcategory} onChange={(event) => setDraft((current) => ({ ...current, subcategory: event.target.value }))}>{subcategoriesFor(draft.category).map((item) => <option key={item.label}>{item.label}</option>)}</select></label></div>
-          <label>Suggested amount<input value={draft.price} onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Free or coordinate in chat" /><small>Temporary listings can be free or paid directly between participants.</small></label>
-          <label>Availability <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.availability.trim()} value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Today after 5 PM" />{attempted && !draft.availability.trim() && <small className="field-error">Say when this one-off offer is available.</small>}</label>
-          <label>Description <span aria-hidden="true">*</span><textarea aria-invalid={attempted && !draft.description.trim()} rows={4} maxLength={320} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="What will the other student get?" />{attempted && !draft.description.trim() && <small className="field-error">Describe the task and its boundary.</small>}</label>
+          <label>Your budget (optional)<input value={draft.price} onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Volunteer help or an agreed amount" /><small>Ask for volunteer help or set a budget.</small></label>
+          <label>Availability <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.availability.trim()} value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Today after 5 PM" />{attempted && !draft.availability.trim() && <small className="field-error">Say when you need help.</small>}</label>
+          <label>Description <span aria-hidden="true">*</span><textarea aria-invalid={attempted && !draft.description.trim()} rows={4} maxLength={320} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="What do you need help with?" />{attempted && !draft.description.trim() && <small className="field-error">Describe the task and its boundary.</small>}</label>
           <div className="ai-helper"><div><Sparkles size={17} /><div><strong>{assistantSource === "gemini" ? "Gemini suggestion" : assistantSource === "deterministic-fallback" ? "Rule-based fallback" : assistantSource === "template" ? "Preview template" : "Writing assistant"}</strong><p>{assistantSource ? "Suggestion applied. Review every word before publishing." : "Refine the title and category without publishing automatically."}</p></div></div><button type="button" disabled={assistantBusy} onClick={onAssistant}>{assistantBusy ? "Reviewing…" : "Suggest"}</button></div>
           {assistantError && <p className="form-error" role="alert">{assistantError}</p>}
           <label className="review-check"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed the title, scope and availability.</span></label>
-          {attempted && !reviewed && <p className="form-error" role="alert">Review and confirm the offer before publishing.</p>}
+          {attempted && !reviewed && <p className="form-error" role="alert">Review and confirm your request before publishing.</p>}
           {confirmDiscard && <div className="discard-confirm" role="alert"><span>Discard this draft?</span><button type="button" onClick={onClose}>Discard</button><button type="button" onClick={() => setConfirmDiscard(false)}>Keep editing</button></div>}
-          <div className="modal-actions"><button className="secondary-button" type="button" onClick={requestClose}>Cancel</button><button className="primary-action" type="submit" disabled={!valid}>Publish offer <Plus size={16} /></button></div>
+          <div className="modal-actions"><button className="secondary-button" type="button" onClick={requestClose}>Cancel</button><button className="primary-action" type="submit" disabled={!valid}>Post request <Plus size={16} /></button></div>
         </form>
       </section>
     </div>

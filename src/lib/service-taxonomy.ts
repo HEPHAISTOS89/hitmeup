@@ -82,7 +82,7 @@ export const CATEGORY_CATALOG: readonly CategoryDefinition[] = [
   {
     id: "Social",
     label: "Hit Me Up / Social",
-    shortLabel: "Social",
+    shortLabel: "HitMeUp",
     description: "Spontaneous plans with people nearby.",
     icon: "party",
     accent: "#e94d71",

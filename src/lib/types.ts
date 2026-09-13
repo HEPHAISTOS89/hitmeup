@@ -5,6 +5,7 @@ export type { ListingKind, ServiceCategory } from "./service-taxonomy";
 export type Service = {
   id: string;
   provider: {
+    avatarUrl?: string | null;
     name: string;
     initials: string;
     verified: boolean;

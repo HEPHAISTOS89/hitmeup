@@ -7,7 +7,7 @@ export const SERVICES: Service[] = [
   {
     id: "social-tacos",
     provider: { name: "Nia Brooks", initials: "NB", verified: true, rating: 4.8, ratingCount: 24, completed: 31, responseMinutes: 5 },
-    title: "Library break + tacos tonight",
+    title: "I need company for a library break",
     description: "A small, low-key group is walking over after the study block. Join without planning a whole week ahead.",
     category: "Social", subcategory: "Grab food", listingKind: "temporary",
     price: "Split your own order", availability: "Today at 7:15 PM", distanceMiles: 0.2,
@@ -17,7 +17,7 @@ export const SERVICES: Service[] = [
   {
     id: "service-furniture",
     provider: { name: "Elena Ruiz", initials: "ER", verified: true, rating: 4.7, ratingCount: 18, completed: 27, responseMinutes: 6 },
-    title: "Furniture assembly help",
+    title: "I need help assembling furniture",
     description: "Flat-pack desk, shelf, or chair assembly with basic tools. We agree on scope before meeting.",
     category: "Services", subcategory: "Furniture assembly", listingKind: "temporary",
     price: "$20 suggested", availability: "Tomorrow after 2 PM", distanceMiles: 0.8,
@@ -27,7 +27,7 @@ export const SERVICES: Service[] = [
   {
     id: "math-midterms",
     provider: { name: "Maya Chen", initials: "MC", verified: true, rating: 4.9, ratingCount: 42, completed: 57, responseMinutes: 4 },
-    title: "Calculus rescue session",
+    title: "I need help with calculus",
     description: "One focused hour for limits, derivatives, or the problem set you are stuck on.",
     category: "Tutoring", subcategory: "Exam prep", listingKind: "temporary",
     price: "$18 / hour", availability: "Free after 4:30 PM", distanceMiles: 0.3,
@@ -37,7 +37,7 @@ export const SERVICES: Service[] = [
   {
     id: "event-crew",
     provider: { name: "Campus Events Team", initials: "CE", verified: true, rating: 4.8, ratingCount: 11, completed: 19, responseMinutes: 12 },
-    title: "Three helpers for Saturday setup",
+    title: "I need three helpers for Saturday setup",
     description: "Two-hour paid shift moving lightweight signs, checking tables, and helping guests find the entrance.",
     category: "Jobs", subcategory: "Event staffing", listingKind: "temporary",
     price: "$32 total", availability: "Saturday · 3–5 PM", distanceMiles: 0.5,
@@ -47,7 +47,7 @@ export const SERVICES: Service[] = [
   {
     id: "food-drive",
     provider: { name: "Avery Cole", initials: "AC", verified: true, rating: 4.9, ratingCount: 15, completed: 22, responseMinutes: 9 },
-    title: "Food-drive sorting crew",
+    title: "I need volunteers for a food drive",
     description: "Help sort shelf-stable donations into boxes. Come for thirty minutes or stay for the full session.",
     category: "Volunteer", subcategory: "Donation drives", listingKind: "temporary",
     price: "Volunteer", availability: "Saturday morning", distanceMiles: 0.7,
@@ -57,7 +57,7 @@ export const SERVICES: Service[] = [
   {
     id: "chess-table",
     provider: { name: "Owen Price", initials: "OP", verified: true, rating: 4.6, ratingCount: 9, completed: 14, responseMinutes: 8 },
-    title: "Beginner chess table",
+    title: "I need a beginner chess partner",
     description: "Friendly rapid games and openings for people who know the rules but want more practice.",
     category: "Clubs", subcategory: "Chess", listingKind: "temporary",
     price: "Free", availability: "Today at 6 PM", distanceMiles: 0.4,
@@ -67,7 +67,7 @@ export const SERVICES: Service[] = [
   {
     id: "sunset-run",
     provider: { name: "Sam Taylor", initials: "ST", verified: true, rating: 4.8, ratingCount: 21, completed: 33, responseMinutes: 5 },
-    title: "Easy sunset run",
+    title: "I need a running buddy",
     description: "A conversational two-mile loop. No pace pressure and nobody gets left behind.",
     category: "Activities", subcategory: "Running", listingKind: "temporary",
     price: "Free", availability: "This evening at 6:30", distanceMiles: 0.6,
@@ -77,7 +77,7 @@ export const SERVICES: Service[] = [
   {
     id: "open-mic",
     provider: { name: "Jordan Blake", initials: "JB", verified: true, rating: 4.7, ratingCount: 17, completed: 29, responseMinutes: 11 },
-    title: "Student open-mic night",
+    title: "I need performers for open-mic night",
     description: "Music, poems, and short comedy sets. Watch, perform, or bring a friend.",
     category: "Events", subcategory: "Open mics", listingKind: "temporary",
     price: "Free entry", availability: "Friday at 8 PM", distanceMiles: 0.9,
@@ -107,7 +107,7 @@ export const SERVICES: Service[] = [
   {
     id: "usb-c-charger",
     provider: { name: "Noah Williams", initials: "NW", verified: true, rating: 4.9, ratingCount: 12, completed: 18, responseMinutes: 3 },
-    title: "USB-C charger for an hour",
+    title: "I need a USB-C charger for an hour",
     description: "I am studying nearby and can lend a 65W charger while you finish your work.",
     category: "Help", subcategory: "Borrow an item", listingKind: "temporary",
     price: "Free", availability: "Available now", distanceMiles: 0.1,

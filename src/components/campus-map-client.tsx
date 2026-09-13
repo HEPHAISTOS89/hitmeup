@@ -1,9 +1,13 @@
 "use client";
 
-import { AttributionControl, Map as MapLibreMap, Marker as MapLibreMarker, NavigationControl, setWorkerUrl } from "maplibre-gl";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { AttributionControl, Map as MapLibreMap, Marker as MapLibreMarker, Popup, NavigationControl, setWorkerUrl } from "maplibre-gl";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { renderToStaticMarkup } from "react-dom/server";
+import { PartyPopper, Wrench, GraduationCap, Briefcase, HeartHandshake, Gamepad2, Dumbbell, Ticket, Store, HandHelping, type LucideIcon } from "lucide-react";
 import type { Service, ServiceCategory } from "@/lib/types";
 import { CAMPUS_CENTER } from "@/lib/service-catalog";
+import { categoryDefinition } from "@/lib/service-taxonomy";
 
 export const DEFAULT_LIGHT_MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 export const DEFAULT_DARK_MAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
@@ -34,6 +38,17 @@ const CATEGORY_MARKERS: Record<ServiceCategory, { glyph: string; slug: string }>
   Businesses: { glyph: "▣", slug: "businesses" },
   Help: { glyph: "?", slug: "help" },
 };
+
+const CATEGORY_PIN_ICONS: Record<ServiceCategory, LucideIcon> = {
+  Social: PartyPopper, Services: Wrench, Tutoring: GraduationCap, Jobs: Briefcase,
+  Volunteer: HeartHandshake, Clubs: Gamepad2, Activities: Dumbbell, Events: Ticket,
+  Businesses: Store, Help: HandHelping,
+};
+
+function CategoryPinIcon({ category }: { category: ServiceCategory }) {
+  const Icon = CATEGORY_PIN_ICONS[category];
+  return <Icon size={18} strokeWidth={1.8} aria-hidden="true" />;
+}
 
 function safeStyleUrl(candidate: string | undefined, fallback: string) {
   const value = candidate?.trim();
@@ -118,9 +133,9 @@ function MapFallback({
             <span
               className={`campus-diagram-pin is-${presentation.slug}${service.id === selectedId ? " is-selected" : ""}`}
               key={service.id}
-              style={fallbackPosition(service.approximatePosition, services)}
+              style={{ ...fallbackPosition(service.approximatePosition, services), "--marker-color": categoryDefinition(service.category).accent } as CSSProperties}
             >
-              {presentation.glyph}
+              <CategoryPinIcon category={service.category} />
             </span>
           );
         })}
@@ -133,13 +148,14 @@ function MapFallback({
           return (
             <button
               className={`campus-fallback-service is-${presentation.slug}${selected ? " is-selected" : ""}`}
+              style={{ "--marker-color": categoryDefinition(service.category).accent } as CSSProperties}
               type="button"
               key={service.id}
               aria-pressed={selected}
               aria-label={presentation.label}
               onClick={() => onSelect(service.id)}
             >
-              <span className="campus-fallback-glyph" aria-hidden="true">{presentation.glyph}</span>
+              <span className="campus-fallback-glyph" aria-hidden="true"><CategoryPinIcon category={service.category} /></span>
               <span><strong>{service.title}</strong><small>{service.category} · {service.distanceMiles.toFixed(1)} mi</small></span>
             </button>
           );
@@ -154,12 +170,16 @@ export default function CampusMapClient({
   selectedId,
   recenterKey,
   onSelect,
+  popupContent,
 }: {
   services: Service[];
   selectedId?: string;
   recenterKey: number;
   onSelect: (id: string) => void;
+  popupContent?: ReactNode;
 }) {
+  const [popupHost, setPopupHost] = useState<HTMLDivElement | null>(null);
+  useEffect(() => { setPopupHost(document.createElement("div")); }, []);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef(new Map<string, MarkerRecord>());
@@ -173,6 +193,68 @@ export default function CampusMapClient({
   const [fallbackReason, setFallbackReason] = useState<MapFallbackReason>(() => typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "style");
   const [theme, setTheme] = useState<"light" | "dark">(() => typeof document === "undefined" ? "light" : documentTheme());
   const [retryKey, setRetryKey] = useState(0);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || phase !== "ready") return;
+    const canvas = map.getCanvas();
+    map.dragPan.disable();
+    map.dragRotate.disable();
+    map.touchZoomRotate.disable();
+    map.touchPitch.disable();
+    const previousCursor = canvas.style.cursor;
+    const previousTouchAction = canvas.style.touchAction;
+    canvas.style.cursor = "grab";
+    canvas.style.touchAction = "none";
+    let drag: { id: number; button: number; x: number; y: number; bearing: number; pitch: number } | null = null;
+    const down = (event: PointerEvent) => {
+      if ((event.button !== 0 && event.button !== 2) || drag) return;
+      event.preventDefault();
+      map.stop();
+      drag = { id: event.pointerId, button: event.button, x: event.clientX, y: event.clientY, bearing: map.getBearing(), pitch: map.getPitch() };
+      canvas.setPointerCapture(event.pointerId);
+      canvas.style.cursor = "grabbing";
+    };
+    const move = (event: PointerEvent) => {
+      if (!drag || drag.id !== event.pointerId) return;
+      event.preventDefault();
+      if (drag.button === 2) {
+        map.panBy([drag.x - event.clientX, drag.y - event.clientY], { duration: 0 });
+        drag.x = event.clientX;
+        drag.y = event.clientY;
+      } else {
+        map.jumpTo({ bearing: drag.bearing + (event.clientX - drag.x) * 0.4, pitch: Math.max(0, Math.min(65, drag.pitch - (event.clientY - drag.y) * 0.3)) });
+      }
+    };
+    const up = (event: PointerEvent) => {
+      if (!drag || drag.id !== event.pointerId) return;
+      drag = null;
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      canvas.style.cursor = "grab";
+    };
+    const preventMenu = (event: MouseEvent) => event.preventDefault();
+    canvas.addEventListener("contextmenu", preventMenu);
+    canvas.addEventListener("pointerdown", down);
+    canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointerup", up);
+    canvas.addEventListener("pointercancel", up);
+    canvas.addEventListener("lostpointercapture", up);
+    return () => {
+      canvas.removeEventListener("contextmenu", preventMenu);
+      canvas.removeEventListener("pointerdown", down);
+      canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointerup", up);
+      canvas.removeEventListener("pointercancel", up);
+      canvas.removeEventListener("lostpointercapture", up);
+      if (drag && canvas.hasPointerCapture(drag.id)) canvas.releasePointerCapture(drag.id);
+      canvas.style.cursor = previousCursor;
+      canvas.style.touchAction = previousTouchAction;
+      map.dragPan.enable();
+      map.dragRotate.enable();
+      map.touchZoomRotate.enable();
+      map.touchPitch.enable();
+    };
+  }, [phase, retryKey]);
 
   function setMapPhase(next: MapPhase) {
     phaseRef.current = next;
@@ -235,6 +317,11 @@ export default function CampusMapClient({
         maxZoom: 18,
         attributionControl: false,
         cooperativeGestures: true,
+        dragRotate: true,
+        pitchWithRotate: true,
+        touchZoomRotate: true,
+        touchPitch: true,
+        maxPitch: 65,
         fadeDuration: reducedMotion() ? 0 : 220,
       });
       // OpenFreeMap occasionally references optional POI decorations that are
@@ -255,7 +342,7 @@ export default function CampusMapClient({
     const markers = markersRef.current;
     currentStyleRef.current = style;
     stylePendingRef.current = true;
-    map.addControl(new NavigationControl({ showCompass: false }), "bottom-right");
+    map.addControl(new NavigationControl({ showCompass: true, visualizePitch: true }), "bottom-right");
     map.addControl(new AttributionControl({
       compact: true,
       customAttribution: '<a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>',
@@ -354,6 +441,7 @@ export default function CampusMapClient({
       const element = document.createElement("div");
       element.className = `campus-map-marker is-${presentation.slug}`;
       element.style.zIndex = String(presentation.zIndex);
+      element.style.setProperty("--marker-color", categoryDefinition(service.category).accent);
 
       const button = document.createElement("button");
       button.type = "button";
@@ -365,7 +453,8 @@ export default function CampusMapClient({
       const glyph = document.createElement("span");
       glyph.className = "campus-map-pin-glyph";
       glyph.setAttribute("aria-hidden", "true");
-      glyph.textContent = presentation.glyph;
+      // Only trusted, locally defined icon markup; no listing content is inserted as HTML.
+      glyph.innerHTML = renderToStaticMarkup(<CategoryPinIcon category={service.category} />);
 
       const card = document.createElement("span");
       card.className = "campus-map-pin-card";
@@ -414,8 +503,22 @@ export default function CampusMapClient({
     setRetryKey((value) => value + 1);
   }
 
+  const popupVisible = Boolean(popupContent);
+  useEffect(() => {
+    const map = mapRef.current;
+    const service = services.find((item) => item.id === selectedId);
+    if (!map || !service || !popupHost || !popupVisible || phase !== "ready") return;
+    const popup = new Popup({ closeButton: false, closeOnClick: false, anchor: "left", maxWidth: "340px", offset: 28, className: "listing-map-popup" })
+      .setLngLat(mapCenter(service.approximatePosition))
+      .setDOMContent(popupHost)
+      .addTo(map);
+    return () => { popup.remove(); };
+  }, [selectedId, services, popupHost, popupVisible, phase]);
+
   return (
     <div className="campus-map-experience">
+      {popupHost && popupVisible && phase === "ready" && createPortal(popupContent, popupHost)}
+      {popupVisible && phase === "fallback" && <div className="fallback-listing-popup">{popupContent}</div>}
       <div
         ref={containerRef}
         className="maplibre-map"
@@ -431,6 +534,12 @@ export default function CampusMapClient({
         </div>
       )}
 
+      {phase === "ready" && (
+        <div className="map-camera-controls" role="group" aria-label="Map camera">
+          <button type="button" aria-label="Tilt map" title="Toggle tilted view" onClick={() => { const map = mapRef.current; if (map) map.easeTo({ pitch: map.getPitch() > 0 ? 0 : 50, duration: reducedMotion() ? 0 : 350 }); }}>3D</button>
+          <button type="button" aria-label="Reset map orientation" title="Reset north and flatten" onClick={() => mapRef.current?.easeTo({ bearing: 0, pitch: 0, duration: reducedMotion() ? 0 : 300 })}>N ↑</button>
+        </div>
+      )}
       {phase === "ready" && (
         <div className="map-provider-state" role="status" aria-live="polite">
           <span /> Vector map ready
