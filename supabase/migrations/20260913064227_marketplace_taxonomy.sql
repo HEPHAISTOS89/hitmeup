@@ -102,12 +102,12 @@ create or replace function public.create_service(
   exact_wkt text,
   service_subcategory text
 ) returns uuid
-language plpgsql security definer set search_path = public, pg_temp
+language plpgsql security definer set search_path = extensions, public, pg_temp
 as $$
 declare
   created_id uuid;
-  exact_location extensions.geography(point, 4326);
-  public_location extensions.geography(point, 4326);
+  exact_location public.services.exact_point%TYPE;
+  public_location public.services.approximate_point%TYPE;
 begin
   if public.current_subject() is null then raise exception 'authentication required'; end if;
   if public.has_rating_gap(public.current_subject()) then raise exception 'required bilateral rating missing'; end if;
@@ -122,12 +122,12 @@ begin
      or service_availability_note is null or char_length(trim(service_availability_note)) not between 1 and 120 then
     raise exception 'invalid service input';
   end if;
-  exact_location := extensions.ST_GeogFromText(exact_wkt);
-  if extensions.ST_Y(exact_location::extensions.geometry) not between -89.99 and 89.99
-     or extensions.ST_X(exact_location::extensions.geometry) not between -179.99 and 179.99 then
+  exact_location := ST_GeogFromText(exact_wkt);
+  if ST_Y(exact_location::geometry) not between -89.99 and 89.99
+     or ST_X(exact_location::geometry) not between -179.99 and 179.99 then
     raise exception 'exact point is invalid';
   end if;
-  public_location := extensions.ST_Project(exact_location, 350 + random() * 300, random() * 2 * pi());
+  public_location := ST_Project(exact_location, 350 + random() * 300, random() * 2 * pi());
   insert into public.services (
     provider_id, category, subcategory, listing_kind, sponsored, title, description,
     price_note, availability_note, scheduled_for, approximate_point, exact_point
@@ -151,11 +151,11 @@ create or replace function public.replace_service(
   exact_wkt text,
   service_subcategory text
 ) returns boolean
-language plpgsql security definer set search_path = public, pg_temp
+language plpgsql security definer set search_path = extensions, public, pg_temp
 as $$
 declare
-  exact_location extensions.geography(point, 4326);
-  public_location extensions.geography(point, 4326);
+  exact_location public.services.exact_point%TYPE;
+  public_location public.services.approximate_point%TYPE;
 begin
   if public.has_rating_gap(public.current_subject()) then raise exception 'required bilateral rating missing'; end if;
   if service_category is null
@@ -169,12 +169,12 @@ begin
      or service_availability_note is null or char_length(trim(service_availability_note)) not between 1 and 120 then
     raise exception 'invalid service input';
   end if;
-  exact_location := extensions.ST_GeogFromText(exact_wkt);
-  if extensions.ST_Y(exact_location::extensions.geometry) not between -89.99 and 89.99
-     or extensions.ST_X(exact_location::extensions.geometry) not between -179.99 and 179.99 then
+  exact_location := ST_GeogFromText(exact_wkt);
+  if ST_Y(exact_location::geometry) not between -89.99 and 89.99
+     or ST_X(exact_location::geometry) not between -179.99 and 179.99 then
     raise exception 'exact point is invalid';
   end if;
-  public_location := extensions.ST_Project(exact_location, 350 + random() * 300, random() * 2 * pi());
+  public_location := ST_Project(exact_location, 350 + random() * 300, random() * 2 * pi());
   update public.services
   set category = service_category, subcategory = service_subcategory,
       listing_kind = 'temporary', sponsored = false,
@@ -220,7 +220,7 @@ create or replace function public.list_public_marketplace_services(
   service_type text,
   sponsored boolean
 )
-language plpgsql stable security definer set search_path = public, pg_temp
+language plpgsql stable security definer set search_path = extensions, public, pg_temp
 as $$
 declare
   query_pattern text;
@@ -266,9 +266,9 @@ begin
       profile.display_name, profile.rating_sum, profile.rating_count,
       profile.completed_count,
       round(((profile.rating_sum + 4.5 * 8)::numeric / greatest(profile.rating_count + 8, 1)), 2) as adjusted_rating,
-      extensions.ST_Distance(
+      ST_Distance(
         service.approximate_point,
-        extensions.ST_SetSRID(extensions.ST_MakePoint(-101.8747, 33.5843), 4326)::extensions.geography
+        ST_SetSRID(ST_MakePoint(-101.8747, 33.5843), 4326)::geography
       ) / 1609.344 as campus_distance
     from public.services service
     join public.profiles profile on profile.user_id = service.provider_id
@@ -276,8 +276,8 @@ begin
   )
   select rows.id, rows.title, rows.category, rows.subcategory, rows.description,
     rows.price_note, rows.availability_note, rows.scheduled_for,
-    extensions.ST_Y(rows.approximate_point::extensions.geometry),
-    extensions.ST_X(rows.approximate_point::extensions.geometry),
+    ST_Y(rows.approximate_point::geometry),
+    ST_X(rows.approximate_point::geometry),
     rows.campus_distance, rows.display_name,
     upper(left(regexp_replace(rows.display_name, '[^[:alnum:] ]', '', 'g'), 1)
       || left(coalesce(nullif(split_part(rows.display_name, ' ', 2), ''), rows.display_name), 1)),

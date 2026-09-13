@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CATEGORY_CATALOG, SERVICE_CATEGORIES, subcategoriesFor } from "./service-taxonomy";
 
 const migration = readFileSync(
-  new URL("../../supabase/migrations/202609130500_marketplace_taxonomy.sql", import.meta.url),
+  new URL("../../supabase/migrations/20260913064227_marketplace_taxonomy.sql", import.meta.url),
   "utf8",
 );
 
@@ -45,5 +45,16 @@ describe("marketplace taxonomy contract", () => {
     expect(migration).toContain("target_subcategory text default null");
     expect(migration).toContain("listing kind is invalid");
     expect(migration).toContain("query_pattern");
+  });
+
+  it("resolves PostGIS from either trusted extension schema without changing RPC shapes", () => {
+    expect(migration.match(/set search_path = extensions, public, pg_temp/g)).toHaveLength(3);
+    expect(migration).toContain("exact_location public.services.exact_point%TYPE;");
+    expect(migration).toContain("public_location public.services.approximate_point%TYPE;");
+    expect(migration).toContain("ST_GeogFromText(exact_wkt)");
+    expect(migration).toContain("ST_SetSRID(ST_MakePoint(-101.8747, 33.5843), 4326)::geography");
+    expect(migration).not.toMatch(/extensions\.(?:geography|geometry|ST_[A-Za-z0-9_]+)/);
+    expect(migration).toContain("service_scheduled_for timestamptz,\n  exact_wkt text,\n  service_subcategory text");
+    expect(migration).toContain("target_listing_kind text default null");
   });
 });

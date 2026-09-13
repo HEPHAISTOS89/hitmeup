@@ -98,8 +98,12 @@ private key, auth token, or wallet signing material.
   ledger repair `20260913040702_repair_manually_applied_hitmeup_history`.
   Its SQL snapshot is retained under `supabase/repairs/` for audit and is not an
   active migration. Remote migration history lists that repair plus
-  `20260913042018_harden_advisor_findings_without_contract_change`; the latter is
-  also kept in the active Development sequence.
+  `20260913042018_harden_advisor_findings_without_contract_change` and
+  `20260913064227_marketplace_taxonomy`; both are also kept in the active
+  Development sequence. The marketplace migration was first exercised inside a
+  rollback-only Production transaction, then applied through the linked migration
+  API. A second rollback-only functional smoke check proved valid listing
+  creation/projection, invalid-taxonomy rejection, and removal of all QA rows.
   The hardening pass made the safe profile view security-invoker, denied client
   access to rate-limit rows and trigger helpers, consolidated service policies,
   and added all eight missing foreign-key indexes without changing the app RPC
