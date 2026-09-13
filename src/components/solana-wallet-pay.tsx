@@ -2,7 +2,7 @@
 
 import { Check, ExternalLink, LoaderCircle, WalletCards } from "lucide-react";
 import { useState } from "react";
-import { ApiError, unlockCosmetic, updateProfile } from "@/lib/client-api";
+import { getWalletLinkChallenge, linkSolanaWallet, unlockCosmetic } from "@/lib/client-api";
 import {
   connectInjectedSolanaWallet,
   devnetExplorerUrl,
@@ -14,6 +14,30 @@ import {
 import type { CosmeticQuote, CosmeticUnlockResult } from "@/lib/types";
 
 type WalletPhase = "idle" | "connecting" | "ready" | "paying" | "complete" | "error";
+type MessageSigningProvider = {
+  signMessage(message: Uint8Array, display?: "utf8"): Promise<Uint8Array | { signature: Uint8Array }>;
+};
+
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function base58Encode(bytes: Uint8Array) {
+  let leadingZeroes = 0;
+  while (leadingZeroes < bytes.length && bytes[leadingZeroes] === 0) leadingZeroes += 1;
+  const digits: number[] = [];
+  for (let index = leadingZeroes; index < bytes.length; index += 1) {
+    let carry = bytes[index];
+    for (let digit = 0; digit < digits.length; digit += 1) {
+      carry += digits[digit] * 256;
+      digits[digit] = carry % 58;
+      carry = Math.floor(carry / 58);
+    }
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = Math.floor(carry / 58);
+    }
+  }
+  return "1".repeat(leadingZeroes) + digits.reverse().map((digit) => BASE58_ALPHABET[digit]).join("");
+}
 
 export function SolanaWalletPay({
   quote,
@@ -41,13 +65,28 @@ export function SolanaWalletPay({
     try {
       const wallet = await connectInjectedSolanaWallet();
       if (linkedWallet !== wallet.publicKey) {
-        const saved = await updateProfile({ solanaWallet: wallet.publicKey });
-        if (!saved.updated) throw new ApiError("The wallet association was not confirmed.", 502, "invalid_response");
+        const signer = wallet.provider as typeof wallet.provider & Partial<MessageSigningProvider>;
+        if (typeof signer.signMessage !== "function") {
+          throw new SolanaWalletError("message_signing_unavailable", "This wallet cannot prove address ownership with a signed message. Use Phantom, Solflare, or another wallet that supports message signing.");
+        }
+        const challenge = await getWalletLinkChallenge(wallet.publicKey);
+        if (challenge.wallet !== wallet.publicKey) {
+          throw new SolanaWalletError("wallet_link_mismatch", "The wallet-link challenge did not match the connected account.");
+        }
+        const signed = await signer.signMessage(new TextEncoder().encode(challenge.message), "utf8");
+        const signatureBytes = signed instanceof Uint8Array ? signed : signed.signature;
+        if (!(signatureBytes instanceof Uint8Array) || signatureBytes.length !== 64) {
+          throw new SolanaWalletError("invalid_wallet_signature", "The wallet returned an invalid ownership signature.");
+        }
+        const linked = await linkSolanaWallet({ ...challenge, signature: base58Encode(signatureBytes) });
+        if (!linked.linked || linked.wallet !== wallet.publicKey) {
+          throw new SolanaWalletError("wallet_link_unconfirmed", "The server did not confirm this wallet association.");
+        }
         onWalletLinked(wallet.publicKey);
       }
       setConnected(wallet);
       setPhase("ready");
-      setMessage(`${wallet.name} connected and linked to this private profile.`);
+      setMessage(`${wallet.name} connected and linked with a signed ownership proof.`);
     } catch (error) {
       setPhase("error");
       setMessage(error instanceof Error ? error.message : "The wallet could not be connected.");

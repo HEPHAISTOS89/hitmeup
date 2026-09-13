@@ -272,25 +272,39 @@ function subcategoryFromText(text: string, category: ServiceCategory | null) {
   return match && (!category || match[1] === category) ? match[2] : null;
 }
 
+function normalizeDiscoveryQuery(text: string, category: ServiceCategory | null, subcategory: string | null) {
+  let query = privacySafeText(text, DISCOVERY_QUERY_MAX_LENGTH)
+    .replace(/(?:within|under|less than|near)\s*\d+(?:\.\d+)?\s*(?:miles|mile|mi)?/gi, " ")
+    .replace(/(?:at least|minimum|min|over|above|rated)?\s*\d(?:\.\d+)?\s*(?:\+?\s*)?(?:stars?|\/\s*5)/gi, " ")
+    .replace(/\b(?:available now|right now|asap|immediately|today|tonight|this evening|this week|weekend)\b/gi, " ")
+    .replace(/\s+/g, " ").trim();
+  if (category && subcategory) {
+    const categoryLabel = CATEGORY_CATALOG.find((item) => item.id === category)?.label;
+    const taxonomyPhrases = [category, categoryLabel, subcategory]
+      .filter((value): value is string => Boolean(value))
+      .sort((left, right) => right.length - left.length);
+    for (const phrase of taxonomyPhrases) {
+      const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query = query.replace(new RegExp(`\\b${escaped}\\b`, "gi"), " ");
+    }
+    query = query.split(/\s+/).filter((word) => !STOP_WORDS.has(word.toLowerCase())).join(" ");
+  }
+  return query.replace(/\s+/g, " ").trim().slice(0, DISCOVERY_QUERY_MAX_LENGTH);
+}
+
 function deterministicDiscovery(query: string): GeminiDiscoveryFilters {
   const text = privacySafeText(query, 500);
   const result = emptyDiscovery();
   const radius = text.match(/(?:within|under|less than|near)\s*(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)?/i);
   const rating = text.match(/(?:at least|minimum|min|over|above|rated)\s*(\d(?:\.\d+)?)\s*(?:stars?|\/\s*5)?/i) ?? text.match(/(\d(?:\.\d+)?)\s*\+?\s*stars?/i);
   const lower = text.toLowerCase();
-  result.query = text.replace(/(?:within|under|less than|near)\s*\d+(?:\.\d+)?\s*(?:miles|mile|mi)?/i, "").replace(/(?:at least|minimum|min|over|above|rated)?\s*\d(?:\.\d+)?\s*(?:\+?\s*)?(?:stars?|\/\s*5)/i, "").replace(/\s+/g, " ").trim().slice(0, DISCOVERY_QUERY_MAX_LENGTH);
   result.category = categoryFromText(lower);
   result.subcategory = subcategoryFromText(lower, result.category);
+  result.query = normalizeDiscoveryQuery(text, result.category, result.subcategory);
   result.radiusMiles = radius ? Math.min(DISCOVERY_RADIUS_MAX_MILES, Math.max(0, Number(radius[1]))) : null;
   result.minimumRating = rating ? Math.min(5, Math.max(0, Number(rating[1]))) : null;
   result.availability = /available now|right now|asap|immediately/.test(lower) ? "now" : /today|tonight|this evening/.test(lower) ? "today" : /this week|weekend/.test(lower) ? "this-week" : null;
   result.listingKind = /permanent|business|restaurant|shop|store|coffee/.test(lower) ? "permanent" : /temporary|one[- ]off|gig|event|today|tonight/.test(lower) ? "temporary" : null;
-  // Category and subcategory are already strict filters. Keep only useful residual
-  // terms so a natural sentence does not become an impossible literal search.
-  if (result.category && result.subcategory) {
-    const taxonomyWords = new Set(`${result.category} ${result.subcategory}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
-    result.query = result.query.split(/\s+/).filter((word) => !STOP_WORDS.has(word.toLowerCase()) && !taxonomyWords.has(word.toLowerCase())).join(" ").trim();
-  }
   return { ...result, source: "deterministic-fallback" };
 }
 
@@ -299,9 +313,10 @@ function validateDiscovery(value: unknown, fallback: GeminiDiscoveryFilters): Ge
   const input = value as Record<string, unknown>;
   const requiredFields = ["query", "category", "subcategory", "radiusMiles", "minimumRating", "availability", "listingKind"];
   if (!requiredFields.every((field) => Object.prototype.hasOwnProperty.call(input, field))) return fallback;
+  if (typeof input.query !== "string") return fallback;
   const category: ServiceCategory | null = input.category === null || input.category === undefined || input.category === "" ? null : canonicalCategory(input.category) ?? null;
   const subcategory: string | null = category && input.subcategory ? canonicalSubcategory(category, input.subcategory) ?? null : null;
-  const query = privacySafeText(input.query, DISCOVERY_QUERY_MAX_LENGTH);
+  const query = normalizeDiscoveryQuery(input.query, category, subcategory);
   const radius = input.radiusMiles === null || input.radiusMiles === undefined || input.radiusMiles === "" ? null : typeof input.radiusMiles === "number" ? input.radiusMiles : NaN;
   const rating = input.minimumRating === null || input.minimumRating === undefined || input.minimumRating === "" ? null : typeof input.minimumRating === "number" ? input.minimumRating : NaN;
   const availability = input.availability === null || input.availability === undefined || input.availability === "" ? null : input.availability;
@@ -327,8 +342,12 @@ function validApprovedInterests(interests: unknown) {
   return [...new Set(interests.filter((item): item is string => typeof item === "string").map((item) => privacySafeText(item, 48)).filter(Boolean))].slice(0, 8);
 }
 
+function limitWords(value: string, maximum: number) {
+  return value.trim().split(/\s+/).filter(Boolean).slice(0, maximum).join(" ");
+}
+
 export async function explainRecommendation(input: ApprovedRecommendationSignals): Promise<RecommendationExplanation> {
-  const fallback = privacySafeText(input.deterministicExplanation, 180) || `A ${input.category.toLowerCase()} option matched your selected preferences.`;
+  const fallback = limitWords(privacySafeText(input.deterministicExplanation, 180) || `A ${input.category.toLowerCase()} option matched your selected preferences.`, 24);
   const interests = validApprovedInterests(input.approvedInterests);
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return { explanation: fallback, source: "deterministic-fallback" };
@@ -346,7 +365,7 @@ export async function explainRecommendation(input: ApprovedRecommendationSignals
     : value && typeof value === "object" && typeof (value as Record<string, unknown>).explanation === "string"
       ? privacySafeText((value as Record<string, unknown>).explanation, 180)
       : "";
-  return generated ? { explanation: generated, source: "gemini" } : { explanation: fallback, source: "deterministic-fallback" };
+  return generated ? { explanation: limitWords(generated, 24), source: "gemini" } : { explanation: fallback, source: "deterministic-fallback" };
 }
 
 export { deterministicDiscovery, validateDiscovery, validateDraft };

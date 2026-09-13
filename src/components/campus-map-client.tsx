@@ -1,9 +1,24 @@
 "use client";
 
-import { AttributionControl, Map as MapLibreMap, Marker as MapLibreMarker, NavigationControl, setWorkerUrl } from "maplibre-gl";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { AttributionControl, Map as MapLibreMap, Marker as MapLibreMarker, NavigationControl, Popup, setWorkerUrl } from "maplibre-gl";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import {
+  Briefcase,
+  Dumbbell,
+  Gamepad2,
+  GraduationCap,
+  HandHelping,
+  HeartHandshake,
+  PartyPopper,
+  Store,
+  Ticket,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import type { Service, ServiceCategory } from "@/lib/types";
 import { CAMPUS_CENTER } from "@/lib/service-catalog";
+import { categoryDefinition } from "@/lib/service-taxonomy";
 
 export const DEFAULT_LIGHT_MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 export const DEFAULT_DARK_MAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
@@ -34,6 +49,42 @@ const CATEGORY_MARKERS: Record<ServiceCategory, { glyph: string; slug: string }>
   Businesses: { glyph: "▣", slug: "businesses" },
   Help: { glyph: "?", slug: "help" },
 };
+
+const CATEGORY_PIN_ICONS: Record<ServiceCategory, LucideIcon> = {
+  Social: PartyPopper,
+  Services: Wrench,
+  Tutoring: GraduationCap,
+  Jobs: Briefcase,
+  Volunteer: HeartHandshake,
+  Clubs: Gamepad2,
+  Activities: Dumbbell,
+  Events: Ticket,
+  Businesses: Store,
+  Help: HandHelping,
+};
+
+function CategoryPinIcon({ category }: { category: ServiceCategory }) {
+  const Icon = CATEGORY_PIN_ICONS[category];
+  return <Icon size={18} strokeWidth={1.8} aria-hidden="true" />;
+}
+
+function createMarkerGlyphIcon(category: ServiceCategory) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("aria-hidden", "true");
+  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  text.setAttribute("x", "12");
+  text.setAttribute("y", "16");
+  text.setAttribute("text-anchor", "middle");
+  text.setAttribute("fill", "currentColor");
+  text.setAttribute("font-size", "14");
+  text.setAttribute("font-weight", "800");
+  text.textContent = CATEGORY_MARKERS[category].glyph;
+  svg.append(text);
+  return svg;
+}
 
 function safeStyleUrl(candidate: string | undefined, fallback: string) {
   const value = candidate?.trim();
@@ -118,9 +169,12 @@ function MapFallback({
             <span
               className={`campus-diagram-pin is-${presentation.slug}${service.id === selectedId ? " is-selected" : ""}`}
               key={service.id}
-              style={fallbackPosition(service.approximatePosition, services)}
+              style={{
+                ...fallbackPosition(service.approximatePosition, services),
+                "--marker-color": categoryDefinition(service.category).accent,
+              } as CSSProperties}
             >
-              {presentation.glyph}
+              <CategoryPinIcon category={service.category} />
             </span>
           );
         })}
@@ -133,13 +187,14 @@ function MapFallback({
           return (
             <button
               className={`campus-fallback-service is-${presentation.slug}${selected ? " is-selected" : ""}`}
+              style={{ "--marker-color": categoryDefinition(service.category).accent } as CSSProperties}
               type="button"
               key={service.id}
               aria-pressed={selected}
               aria-label={presentation.label}
               onClick={() => onSelect(service.id)}
             >
-              <span className="campus-fallback-glyph" aria-hidden="true">{presentation.glyph}</span>
+              <span className="campus-fallback-glyph" aria-hidden="true"><CategoryPinIcon category={service.category} /></span>
               <span><strong>{service.title}</strong><small>{service.category} · {service.distanceMiles.toFixed(1)} mi</small></span>
             </button>
           );
@@ -154,12 +209,17 @@ export default function CampusMapClient({
   selectedId,
   recenterKey,
   onSelect,
+  popupContent,
 }: {
   services: Service[];
   selectedId?: string;
   recenterKey: number;
   onSelect: (id: string) => void;
+  popupContent?: ReactNode;
 }) {
+  const [popupHost] = useState<HTMLDivElement | null>(() =>
+    typeof document === "undefined" ? null : document.createElement("div"),
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef(new Map<string, MarkerRecord>());
@@ -354,6 +414,7 @@ export default function CampusMapClient({
       const element = document.createElement("div");
       element.className = `campus-map-marker is-${presentation.slug}`;
       element.style.zIndex = String(presentation.zIndex);
+      element.style.setProperty("--marker-color", categoryDefinition(service.category).accent);
 
       const button = document.createElement("button");
       button.type = "button";
@@ -365,7 +426,7 @@ export default function CampusMapClient({
       const glyph = document.createElement("span");
       glyph.className = "campus-map-pin-glyph";
       glyph.setAttribute("aria-hidden", "true");
-      glyph.textContent = presentation.glyph;
+      glyph.append(createMarkerGlyphIcon(service.category));
 
       const card = document.createElement("span");
       card.className = "campus-map-pin-card";
@@ -414,8 +475,34 @@ export default function CampusMapClient({
     setRetryKey((value) => value + 1);
   }
 
+  const popupVisible = Boolean(popupContent);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const service = services.find((item) => item.id === selectedId);
+    if (!map || !service || !popupHost || !popupVisible || phase !== "ready") return;
+
+    const popup = new Popup({
+      closeButton: false,
+      closeOnClick: false,
+      anchor: "left",
+      maxWidth: "340px",
+      offset: 28,
+      className: "listing-map-popup",
+    })
+      .setLngLat(mapCenter(service.approximatePosition))
+      .setDOMContent(popupHost)
+      .addTo(map);
+
+    return () => {
+      popup.remove();
+    };
+  }, [phase, popupContent, popupHost, popupVisible, selectedId, services]);
+
   return (
     <div className="campus-map-experience">
+      {popupHost && popupVisible && phase === "ready" && createPortal(popupContent, popupHost)}
+      {popupVisible && phase === "fallback" && <div className="fallback-listing-popup">{popupContent}</div>}
       <div
         ref={containerRef}
         className="maplibre-map"

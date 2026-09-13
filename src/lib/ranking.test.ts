@@ -14,5 +14,12 @@ describe("service ranking", () => {
     const ranked = rankServices(SERVICES, ["Help"]);
     expect(ranked[0].category).toBe("Help");
     expect(ranked[0].explanation).toContain("adjusted rating");
+    expect(ranked[0].explanation).toContain("Matches a selected");
+  });
+
+  it("does not claim an interest match when there is none", () => {
+    const ranked = rankServices(SERVICES, []);
+    expect(ranked[0].explanation).toContain("Ranked by approximate distance");
+    expect(ranked[0].explanation).not.toContain("selected");
   });
 });

@@ -89,15 +89,17 @@ describe("frontend API contract", () => {
       label: "Profile frame",
       lamports: 10_000_000,
       treasury: "11111111111111111111111111111111",
+      checkoutId: "00000000-0000-4000-8000-000000000001",
     } as const;
     const fetchMock = vi.fn(async () => jsonResponse(quote));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(getCosmeticQuote("profile-frame")).resolves.toEqual(quote);
+    const checkoutKey = "00000000-0000-4000-8000-000000000002";
+    await expect(getCosmeticQuote("profile-frame", checkoutKey)).resolves.toEqual(quote);
     expect(fetchMock).toHaveBeenCalledWith("/api/integrations/solana/quote", expect.objectContaining({
       method: "POST",
       credentials: "same-origin",
-      body: JSON.stringify({ productId: "profile-frame" }),
+      body: JSON.stringify({ productId: "profile-frame", checkoutKey }),
     }));
   });
 
@@ -127,11 +129,11 @@ describe("frontend API contract", () => {
     const fetchMock = vi.fn(async () => jsonResponse(result));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(unlockCosmetic("profile-frame", "real-wallet-signature")).resolves.toEqual(result);
+    await expect(unlockCosmetic("profile-frame", "real-wallet-signature", "00000000-0000-4000-8000-000000000001")).resolves.toEqual(result);
     expect(fetchMock).toHaveBeenCalledWith("/api/integrations/solana/unlock", expect.objectContaining({
       method: "POST",
       credentials: "same-origin",
-      body: JSON.stringify({ productId: "profile-frame", signature: "real-wallet-signature" }),
+      body: JSON.stringify({ productId: "profile-frame", signature: "real-wallet-signature", checkoutId: "00000000-0000-4000-8000-000000000001" }),
     }));
   });
 
@@ -181,20 +183,11 @@ describe("frontend API contract", () => {
   it("asks for an explainable match using approved coarse interests only", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ explanation: "Nearby calculus help matches your tutoring interest.", source: "gemini" }));
     vi.stubGlobal("fetch", fetchMock);
-    const input = {
-      title: "Calculus rescue session",
-      category: "Tutoring" as const,
-      subcategory: "Exam prep",
-      approvedInterests: ["Tutoring"],
-      distanceMiles: 0.7,
-      adjustedRating: 4.8,
-      deterministicExplanation: "A strong tutoring match nearby.",
-    };
-
-    await explainServiceRecommendation(input);
+    const serviceId = "00000000-0000-4000-8000-000000000001";
+    await explainServiceRecommendation(serviceId);
     expect(fetchMock).toHaveBeenCalledWith("/api/gemini/explain", expect.objectContaining({
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify({ serviceId }),
     }));
   });
 

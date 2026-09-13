@@ -41,6 +41,7 @@ import {
   getMessages,
   getNotifications,
   getProfile,
+  getRecommendations,
   getReceivedReviews,
   getRequests,
   getServices,
@@ -328,6 +329,8 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [smartResult, setSmartResult] = useState<{ source: "gemini" | "deterministic-fallback" | "preview"; summary: string } | null>(null);
   const [matchExplanation, setMatchExplanation] = useState<{ serviceId: string; text: string; source: "gemini" | "deterministic-fallback" | "preview" } | null>(null);
   const [matchExplanationBusy, setMatchExplanationBusy] = useState(false);
+  const [serverRecommendations, setServerRecommendations] = useState<Record<string, { score: number; explanation: string }>>({});
+  const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
   const [compactViewport, setCompactViewport] = useState(false);
   const [mapInView, setMapInView] = useState(true);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
@@ -336,6 +339,9 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const activeRequestIdRef = useRef<string | undefined>(dataMode === "preview" ? PREVIEW_REQUESTS[0]?.id : undefined);
   const requestsFetchGeneration = useRef(0);
   const preferredCategories = useMemo(() => preferredCategoriesFromProfile(profile), [profile]);
+  const profileInterestKey = profile?.interests.join("\u0000") ?? "";
+  const personalizedDefaultView = category === "All" && !query.trim() && minimumRating === 0
+    && maxDistanceMiles === 3 && listingFilter === "all" && !subcategory && availabilityWindow === "any";
 
   const visibleServices = useMemo(() => filterAndRankServices(
     services,
@@ -352,7 +358,15 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     preferredCategories,
   ), [availabilityWindow, category, listingFilter, maxDistanceMiles, minimumRating, preferredCategories, query, services, subcategory]);
 
-  const presentedServices = visibleServices;
+  const presentedServices = useMemo(() => {
+    if (!personalizedDefaultView) return visibleServices;
+    return [...visibleServices]
+      .sort((left, right) => (serverRecommendations[right.id]?.score ?? -1) - (serverRecommendations[left.id]?.score ?? -1))
+      .map((service) => {
+        const recommendation = serverRecommendations[service.id];
+        return recommendation ? { ...service, score: recommendation.score, explanation: recommendation.explanation } : service;
+      });
+  }, [personalizedDefaultView, serverRecommendations, visibleServices]);
   const selectedCategoryDefinition = category === "All" ? undefined : categoryDefinition(category);
   const availableSubcategories = category === "All" ? [] : subcategoriesFor(category);
 
@@ -391,16 +405,25 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     if (dataMode === "preview") return;
     const timer = window.setTimeout(() => {
       setSurfaceMode("loading");
-      getServices({
-        category: category === "All" ? undefined : category,
-        query: query.trim() || undefined,
-        minRating: minimumRating || undefined,
-        maxDistanceMiles,
-        listingKind: listingFilter === "all" ? undefined : listingFilter,
-        subcategory,
-      })
+      const serviceRequest = personalizedDefaultView
+        ? getRecommendations()
+        : getServices({
+          category: category === "All" ? undefined : category,
+          query: query.trim() || undefined,
+          minRating: minimumRating || undefined,
+          maxDistanceMiles,
+          listingKind: listingFilter === "all" ? undefined : listingFilter,
+          subcategory,
+        });
+      serviceRequest
         .then((next) => {
           setServices(next);
+          setServerRecommendations(personalizedDefaultView
+            ? Object.fromEntries(next.map((service) => {
+              const recommendation = service as Service & { score: number; explanation: string };
+              return [recommendation.id, { score: recommendation.score, explanation: recommendation.explanation }];
+            }))
+            : {});
           setSelectedId((current) => next.some((service) => service.id === current) ? current : next[0]?.id);
           setDataError("");
           setSurfaceMode("default");
@@ -411,7 +434,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
         });
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [category, dataMode, listingFilter, maxDistanceMiles, minimumRating, query, subcategory]);
+  }, [category, dataMode, listingFilter, maxDistanceMiles, minimumRating, personalizedDefaultView, profileInterestKey, query, recommendationRefreshKey, subcategory]);
 
   useEffect(() => {
     if (dataMode === "preview") return;
@@ -496,6 +519,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
           setServices(next);
           setSelectedId((current) => next.some((service) => service.id === current) ? current : next[0]?.id);
           setSurfaceMode("default");
+          setRecommendationRefreshKey((value) => value + 1);
         }
         setLiveDataConnection("online");
       } catch {
@@ -666,7 +690,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     setSelectedId(id);
     setMatchExplanation((current) => current?.serviceId === id ? current : null);
     if (dataMode === "live" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
-      void recordProductEvent({ name: "service_viewed", serviceId: id, metadata: { source: "discovery", view: "service" } }).catch(() => undefined);
+      void recordProductEvent({ name: "service_viewed", serviceId: id, metadata: { source: serverRecommendations[id] ? "profile" : "discovery", view: "service" } }).catch(() => undefined);
     }
     if (dataMode === "preview" && id !== selectedId) clearActiveRequest();
   }
@@ -886,15 +910,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     }
     setMatchExplanationBusy(true);
     try {
-      const result = await explainServiceRecommendation({
-        title: selected.title,
-        category: selected.category,
-        subcategory: selected.subcategory,
-        approvedInterests: profile?.interests.slice(0, 8),
-        distanceMiles: selected.distanceMiles,
-        adjustedRating: selected.provider.rating,
-        deterministicExplanation: selected.explanation,
-      });
+      const result = await explainServiceRecommendation(selected.id);
       setMatchExplanation({ serviceId: selected.id, text: result.explanation, source: result.source });
     } catch (error) {
       setMatchExplanation({ serviceId: selected.id, text: selected.explanation, source: "deterministic-fallback" });
@@ -1070,11 +1086,11 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
             </div>
             <div className="nearby-list" aria-label="Nearby listings">
               <div className="nearby-list-heading"><span>Nearby</span><small>{presentedServices.length} found</small></div>
-              {presentedServices.slice(0, 5).map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}>{service.provider.initials}</span><span><strong>{service.title}</strong><small>{service.listingKind === "permanent" ? "Permanent pin" : service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
+              {presentedServices.map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} aria-current={selected?.id === service.id ? "true" : undefined} aria-label={`${service.title}, ${service.distanceMiles.toFixed(1)} miles away`} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}><ServiceGlyph name={categoryDefinition(service.category).icon} size={17} /></span><span><strong>{service.title}</strong><small>{service.listingKind === "permanent" ? "Permanent pin" : service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
             </div>
           </aside>
           <section ref={mapStageRef} className="map-stage" aria-label="Campus listings map">
-            {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={selected?.id} recenterKey={recenterKey} onSelect={selectService} />}
+            {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={selected?.id} recenterKey={recenterKey} onSelect={selectService} popupContent={selected ? <MapListingPopup service={selected} requestDisabled={ratingBlocked} onAction={selected.listingKind === "permanent" ? () => setBusinessModal(selected) : openSelectedRequest} /> : null} />}
             <div className={`map-status live-${liveDataConnection}`} aria-live="polite"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"} · {liveDataConnection === "preview" ? "preview" : liveDataConnection === "online" ? "live" : liveDataConnection === "connecting" ? "connecting" : "reconnecting"}</div>
             <button className="locate-button" type="button" aria-label="Recenter map" onClick={() => setRecenterKey((value) => value + 1)}><LocateFixed size={17} /><span className="locate-label">Recenter</span></button>
             {surfaceMode !== "loading" && surfaceMode !== "offline" && !selected && <EmptyState onReset={() => { resetFilters(); setSurfaceMode("default"); }} />}
@@ -1083,7 +1099,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
         </section>
       </section>}
 
-      {view === "requests" && <RequestsView status={requestsStatus} stage={stage} selected={activeService ?? selected} onBack={() => setView("discover")} onOpen={openActiveRequest} />}
+      {view === "requests" && <RequestsView status={requestsStatus} requests={requests} onBack={() => setView("discover")} onOpen={(request) => { applyRequestProjection(request); if (dataMode === "live") setChatConnection("connecting"); setRequestOpen(true); }} />}
       {view === "profile" && <ProfileView profile={profile} profileStatus={profileStatus} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} cosmeticCatalog={cosmeticCatalog} cosmeticsStatus={cosmeticsStatus} previewMode={dataMode === "preview"} onProfileChange={setProfile} onCatalogChange={setCosmeticCatalog} onResetPreview={() => setProfile({ ...PREVIEW_PROFILE, interests: [...PREVIEW_PROFILE.interests] })} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
       <footer className="trust-strip"><span><BadgeCheck size={16} /> Student email required</span><span><LockKeyhole size={16} /> Mutual location consent</span><span><CircleDollarSign size={16} /> Pay face-to-face</span></footer>
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
@@ -1106,6 +1122,16 @@ function CategoryRail({ activeCategory, listingFilter, services, onCategory, onL
       {CATEGORY_CATALOG.map((item) => <button type="button" key={item.id} className={activeCategory === item.id ? "selected" : ""} aria-pressed={activeCategory === item.id} onClick={() => onCategory(item.id)} style={{ "--category-accent": item.accent } as CSSProperties}><span><ServiceGlyph name={item.icon} size={23} /></span><strong>{item.shortLabel}</strong><small>{services.filter((service) => service.category === item.id).length || "Explore"}</small>{item.listingKind === "permanent" && <i>Sponsored</i>}</button>)}
     </div>
   </div>;
+}
+
+function MapListingPopup({ service, requestDisabled, onAction }: { service: RankedService; requestDisabled: boolean; onAction: () => void }) {
+  const permanent = service.listingKind === "permanent";
+  return <article className="map-listing-summary" aria-label={`${service.title} listing summary`}>
+    <span className="map-listing-category"><ServiceGlyph name={categoryDefinition(service.category).icon} size={14} /> {categoryDefinition(service.category).label}</span>
+    <strong>{service.title}</strong>
+    <p><span><MapPin size={12} aria-hidden="true" /> {service.distanceMiles.toFixed(1)} mi</span><b>{service.price}</b></p>
+    <button type="button" disabled={!permanent && requestDisabled} onClick={onAction}>{!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Request help"}<ChevronRight size={14} aria-hidden="true" /></button>
+  </article>;
 }
 
 function ServicePeek({
@@ -1153,22 +1179,54 @@ function EmptyState({ onReset }: { onReset: () => void }) {
   return <div className="empty-state"><span className="empty-icon"><Search size={22} /></span><h2>Nothing matches yet.</h2><p>Try another category, widen the radius, or remove a filter.</p><button className="secondary-button" type="button" onClick={onReset}>Reset filters</button></div>;
 }
 
-function RequestsView({ status, stage, selected, onBack, onOpen }: { status: "loading" | "ready" | "error"; stage: RequestStage; selected?: Service; onBack: () => void; onOpen: () => void }) {
+function RequestsView({ status, requests, onBack, onOpen }: { status: "loading" | "ready" | "error"; requests: ServiceRequestSummary[]; onBack: () => void; onOpen: (request: ServiceRequestSummary) => void }) {
   const [tab, setTab] = useState<"active" | "history">("active");
-  const active = selected && !["idle", "closed", "rejected", "cancelled"].includes(stage);
-  const terminal = selected && ["closed", "rejected", "cancelled"].includes(stage);
+  const [search, setSearch] = useState("");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const isHistory = (request: ServiceRequestSummary) => ["closed", "rejected", "cancelled"].includes(request.status);
+  const activeCount = requests.filter((request) => !isHistory(request)).length;
+  const historyCount = requests.length - activeCount;
+  const visible = requests
+    .filter((request) => isHistory(request) === (tab === "history"))
+    .filter((request) => `${request.otherParty.name} ${request.service.title} ${STAGE_LABEL[request.status]}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+
+  function selectTab(next: "active" | "history") {
+    setTab(next);
+    window.requestAnimationFrame(() => tabRefs.current[next === "active" ? 0 : 1]?.focus());
+  }
+
+  function handleTabKey(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home" || event.key === "ArrowLeft") selectTab("active");
+    else selectTab("history");
+  }
+
   return (
-    <section className="secondary-view requests-view">
-      <div className="secondary-inner">
-        <button className="back-button" type="button" onClick={onBack}><ArrowLeft size={16} /> Discover</button>
-        <p className="eyebrow">REQUESTS</p><h1>The next step, clear.</h1><p className="secondary-lede">Private conversations move from request to mutual completion—never to a public feed.</p>
-        <div className="request-tabs" role="tablist" aria-label="Request groups"><button role="tab" aria-selected={tab === "active"} onClick={() => setTab("active")}>Active</button><button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>History</button></div>
+    <section className="secondary-view requests-view inbox-page" aria-labelledby="requests-heading">
+      <div className="secondary-inner inbox-inner">
+        <div className="inbox-header">
+          <div><button className="back-button" type="button" onClick={onBack}><ArrowLeft size={16} /> Discover</button><p className="eyebrow">PRIVATE INBOX</p><h1 id="requests-heading">Messages & requests</h1><p className="secondary-lede">Every conversation stays tied to one service and its next step.</p></div>
+          <div className="inbox-summary" aria-label={`${activeCount} active and ${historyCount} past requests`}><span><strong>{activeCount}</strong> Active</span><span><strong>{historyCount}</strong> History</span></div>
+        </div>
+        <div className="inbox-tools">
+          <div className="request-tabs" role="tablist" aria-label="Request groups">
+            <button ref={(node) => { tabRefs.current[0] = node; }} id="requests-active-tab" role="tab" type="button" aria-selected={tab === "active"} aria-controls="requests-panel" tabIndex={tab === "active" ? 0 : -1} onKeyDown={handleTabKey} onClick={() => setTab("active")}>Active <span>{activeCount}</span></button>
+            <button ref={(node) => { tabRefs.current[1] = node; }} id="requests-history-tab" role="tab" type="button" aria-selected={tab === "history"} aria-controls="requests-panel" tabIndex={tab === "history" ? 0 : -1} onKeyDown={handleTabKey} onClick={() => setTab("history")}>History <span>{historyCount}</span></button>
+          </div>
+          <label className="inbox-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search conversations</span><input type="search" aria-label="Search conversations" placeholder="Search people or services" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+        </div>
+        <div className="conversation-list" id="requests-panel" role="tabpanel" tabIndex={0} aria-labelledby={tab === "active" ? "requests-active-tab" : "requests-history-tab"}>
         {status === "loading" && <div className="empty-wide" role="status"><LoaderCircle className="spin" size={22} /><strong>Loading requests…</strong><p>Checking your private service activity.</p></div>}
         {status === "error" && <div className="empty-wide is-error" role="alert"><TriangleAlert size={22} /><strong>Requests could not be loaded.</strong><p>Your service data is still private. Refresh and try again.</p><button className="secondary-button" type="button" onClick={() => window.location.reload()}>Retry</button></div>}
-        {status === "ready" && tab === "active" && active && <div className="request-preview"><div><span className="request-preview-kicker">ACTIVE REQUEST</span><h2>{selected.title}</h2><p>{selected.provider.name} · {STAGE_LABEL[stage]}</p></div><button className="primary-action" type="button" onClick={onOpen}>Open request <ChevronRight size={16} /></button></div>}
-        {status === "ready" && tab === "active" && !active && <div className="empty-wide"><MessageCircle size={22} /><strong>No active requests.</strong><p>Choose a service on the map to start a private conversation.</p><button className="secondary-button" type="button" onClick={onBack}>Find a service</button></div>}
-        {status === "ready" && tab === "history" && terminal && <div className="request-preview history-preview"><div><span className="request-preview-kicker">SERVICE HISTORY</span><h2>{selected.title}</h2><p>{selected.provider.name} · {STAGE_LABEL[stage]}</p></div><button className="secondary-button" type="button" onClick={onOpen}>View outcome</button></div>}
-        {status === "ready" && tab === "history" && !terminal && <div className="empty-wide"><Clock3 size={22} /><strong>No service history yet.</strong><p>Completed and cancelled services will appear here.</p></div>}
+        {status === "ready" && visible.map((request) => <button className={`conversation-row ${isHistory(request) ? "is-history" : "is-active"}`} type="button" key={request.id} onClick={() => onOpen(request)} aria-label={`Open ${request.service.title} with ${request.otherParty.name}, ${STAGE_LABEL[request.status]}`}>
+          <span className="conversation-avatar" aria-hidden="true">{request.otherParty.initials}</span>
+          <span className="conversation-copy"><strong>{request.otherParty.name}</strong><span>{request.service.title}</span><small><i className={`request-stage-dot stage-${request.status}`} />{request.role === "provider" ? "You are helping" : "You requested help"} · {STAGE_LABEL[request.status]}</small></span>
+          <span className="conversation-meta"><time dateTime={request.createdAt}>{new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(request.createdAt))}</time><ChevronRight size={18} /></span>
+        </button>)}
+        {status === "ready" && !visible.length && <div className="empty-wide inbox-empty"><MessageCircle size={24} /><strong>{search ? "No matching conversations." : tab === "active" ? "No active requests." : "No service history yet."}</strong><p>{search ? "Try a person, service, or status." : tab === "active" ? "Choose a service on the map to start a private conversation." : "Completed and cancelled services will appear here."}</p>{!search && tab === "active" && <button className="secondary-button" type="button" onClick={onBack}>Find a service</button>}</div>}
+        </div>
       </div>
     </section>
   );

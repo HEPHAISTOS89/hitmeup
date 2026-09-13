@@ -69,6 +69,33 @@ describe("request selection safety", () => {
     expect(within(drawer).getByText("What do you need?")).toBeInTheDocument();
     expect(screen.queryByText("Hi! Is the 4:30 PM slot still open?")).not.toBeInTheDocument();
   });
+
+  it("shows every request in a searchable private inbox and opens the selected conversation", () => {
+    render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Requests/i }));
+    expect(screen.getByRole("heading", { name: "Messages & requests" })).toBeInTheDocument();
+    expect(screen.getByLabelText("1 active and 2 past requests")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Calculus rescue session with Maya Chen/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /History 2/i }));
+    expect(screen.getByRole("button", { name: /Portfolio feedback with Jordan Lee/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Laptop setup with Nina Brooks/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search conversations" }), { target: { value: "Jordan" } });
+    expect(screen.queryByRole("button", { name: /Laptop setup with Nina Brooks/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Portfolio feedback with Jordan Lee/i }));
+    expect(within(screen.getByRole("dialog")).getByRole("heading", { name: "Portfolio feedback" })).toBeInTheDocument();
+  });
+
+  it("supports arrow-key navigation between request tabs", () => {
+    render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
+    fireEvent.click(screen.getByRole("button", { name: /^Requests/i }));
+
+    const activeTab = screen.getByRole("tab", { name: /Active 1/i });
+    fireEvent.keyDown(activeTab, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: /History 2/i })).toHaveAttribute("aria-selected", "true");
+  });
 });
 
 describe("responsive safety affordances", () => {
@@ -97,6 +124,15 @@ describe("live marketplace wiring", () => {
     const marketplace = readFileSync(resolve(process.cwd(), "src/components/campus-marketplace.tsx"), "utf8");
     expect(marketplace).toContain('listingKind: listingFilter === "all" ? undefined : listingFilter');
     expect(marketplace).toContain("item.label === suggestion.subcategory");
+  });
+
+  it("uses the authenticated server recommendation order for the default discovery view", () => {
+    const marketplace = readFileSync(resolve(process.cwd(), "src/components/campus-marketplace.tsx"), "utf8");
+    expect(marketplace).toContain("? getRecommendations()");
+    expect(marketplace).toContain("serverRecommendations[right.id]?.score");
+    expect(marketplace).toContain("explanation: recommendation.explanation");
+    expect(marketplace).toContain("profileInterestKey");
+    expect(marketplace).toContain("setRecommendationRefreshKey");
   });
 
   it("subscribes to participant-safe live notifications, requests and approximate services", () => {

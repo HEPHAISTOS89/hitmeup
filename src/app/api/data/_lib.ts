@@ -55,6 +55,9 @@ export function dataError(error: unknown) {
   if (message.includes("required bilateral rating missing")) {
     return NextResponse.json({ error: "Complete your required rating first.", code: "rating_required" }, { status: 409 });
   }
+  if (message.includes("insufficient reward points")) {
+    return NextResponse.json({ error: "Earn more points by completing and rating services.", code: "insufficient_points" }, { status: 409 });
+  }
   if (message.includes("already accepted") || message.includes("duplicate key") || message.includes("already claimed")) {
     return NextResponse.json({ error: "This action conflicts with the current state.", code: "conflict" }, { status: 409 });
   }

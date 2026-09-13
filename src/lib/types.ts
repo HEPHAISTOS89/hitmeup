@@ -1,4 +1,5 @@
 import type { ListingKind, ServiceCategory } from "./service-taxonomy";
+import type { AvatarAssetStatus, AvatarMarketplaceCategory, AvatarUnlockMethod } from "./avatar-marketplace-catalog";
 
 export type { ListingKind, ServiceCategory } from "./service-taxonomy";
 
@@ -117,12 +118,37 @@ export type CosmeticProjection = {
   network: "devnet";
 };
 
+export type AvatarMarketplaceProjection = {
+  sku: string;
+  label: string;
+  category: AvatarMarketplaceCategory;
+  value: string;
+  equipGroup: string;
+  collections: Array<"male" | "female">;
+  unlockMethod: AvatarUnlockMethod;
+  purchaseSku: string | null;
+  lamports: number;
+  rewardPoints: number;
+  owned: boolean;
+  equipped: boolean;
+  network: "devnet" | null;
+  assetStatus: AvatarAssetStatus;
+};
+
+export type RewardSummary = {
+  balance: number;
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+  unlockedSkus: string[];
+};
+
 export type CosmeticQuote = {
   network: "devnet";
   productId: string;
   label: string;
   lamports: number;
   treasury: string;
+  checkoutId: string;
 };
 
 export type CosmeticUnlockResult = {

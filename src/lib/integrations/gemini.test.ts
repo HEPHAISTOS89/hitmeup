@@ -37,6 +37,33 @@ describe("Gemini discovery parser", () => {
     });
   });
 
+  it("removes structured radius, rating and time phrases from a valid model query", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+      query: "calculus within 2 miles rated 4.5 stars today", category: "Tutoring", subcategory: "Exam prep",
+      radiusMiles: 2, minimumRating: 4.5, availability: "today", listingKind: "temporary",
+    }) }] } }] }), { status: 200 })));
+    await expect(parseNaturalLanguageDiscovery("calculus near me")).resolves.toMatchObject({
+      query: "calculus", radiusMiles: 2, minimumRating: 4.5, availability: "today", source: "gemini",
+    });
+  });
+
+  it("removes redundant taxonomy phrases and rejects a non-string model query", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+        query: "calculus tutoring exam prep", category: "Tutoring", subcategory: "Exam prep",
+        radiusMiles: null, minimumRating: null, availability: null, listingKind: "temporary",
+      }) }] } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+        query: { unsafe: true }, category: "Tutoring", subcategory: "Exam prep",
+        radiusMiles: null, minimumRating: null, availability: null, listingKind: null,
+      }) }] } }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(parseNaturalLanguageDiscovery("calculus tutoring exam prep")).resolves.toMatchObject({ query: "calculus", source: "gemini" });
+    await expect(parseNaturalLanguageDiscovery("math tutoring")).resolves.toMatchObject({ source: "deterministic-fallback" });
+  });
+
   it("falls back when Gemini returns malformed or out-of-range filters", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "not json" }] } }] }), { status: 200 })));
@@ -103,6 +130,14 @@ describe("recommendation explanation privacy contract", () => {
 
   it("uses deterministic fallback without a key", async () => {
     await expect(explainRecommendation(input)).resolves.toEqual({ explanation: input.deterministicExplanation, source: "deterministic-fallback" });
+  });
+
+  it("enforces the promised 24-word explanation limit", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const long = Array.from({ length: 40 }, (_, index) => `word${index}`).join(" ");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ explanation: long }) }] } }] }), { status: 200 })));
+    const result = await explainRecommendation(input);
+    expect(result.explanation.split(/\s+/)).toHaveLength(24);
   });
 
   it("sends only approved interests and coarse aggregate bands to Gemini", async () => {

@@ -79,7 +79,8 @@ export async function withDevnetCheckoutLock<T>(wallet: string, operation: () =>
 }
 
 export function validateDevnetQuote(quote: CosmeticQuote) {
-  if (quote.network !== "devnet" || !quote.productId || !Number.isSafeInteger(quote.lamports) || quote.lamports <= 0) {
+  if (quote.network !== "devnet" || !quote.productId || !Number.isSafeInteger(quote.lamports) || quote.lamports <= 0
+      || typeof quote.checkoutId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(quote.checkoutId)) {
     throw new SolanaWalletError("invalid_quote", "The server returned an invalid Devnet quote.");
   }
   try { new PublicKey(quote.treasury); } catch (error) {
@@ -132,14 +133,16 @@ export async function sendQuotedDevnetTransfer({
   return signature;
 }
 
-type PendingPayment = { productId: string; wallet: string; treasury: string; lamports: number; signature: string };
+type PendingPayment = { productId: string; wallet: string; treasury: string; lamports: number; checkoutId: string; signature: string };
 
 function pendingKey(productId: string, wallet: string) { return `${PENDING_PREFIX}${productId}:${wallet}`; }
 
 export function loadPendingDevnetPayment(storage: Pick<Storage, "getItem">, quote: CosmeticQuote, wallet: string): PendingPayment | null {
   try {
     const value = JSON.parse(storage.getItem(pendingKey(quote.productId, wallet)) ?? "null") as PendingPayment | null;
-    return value?.productId === quote.productId && value.wallet === wallet && value.treasury === quote.treasury && value.lamports === quote.lamports && SIGNATURE_PATTERN.test(value.signature) ? value : null;
+    return value?.productId === quote.productId && value.wallet === wallet && value.treasury === quote.treasury
+      && value.lamports === quote.lamports && value.checkoutId === quote.checkoutId
+      && SIGNATURE_PATTERN.test(value.signature) ? value : null;
   } catch { return null; }
 }
 
@@ -164,7 +167,7 @@ export async function payAndUnlockCosmetic({
   storage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   rememberedSignature?: string | null;
   sendTransfer?: typeof sendQuotedDevnetTransfer;
-  unlock: (productId: string, signature: string) => Promise<CosmeticUnlockResult>;
+  unlock: (productId: string, signature: string, checkoutId: string) => Promise<CosmeticUnlockResult>;
 }) {
   validateDevnetQuote(quote);
   const pending = loadPendingDevnetPayment(storage, quote, wallet.publicKey);
@@ -178,12 +181,12 @@ export async function payAndUnlockCosmetic({
         quote,
         onSignature: (nextSignature) => {
           signature = nextSignature;
-          savePendingDevnetPayment(storage, { productId: quote.productId, wallet: wallet.publicKey, treasury: quote.treasury, lamports: quote.lamports, signature: nextSignature });
+          savePendingDevnetPayment(storage, { productId: quote.productId, wallet: wallet.publicKey, treasury: quote.treasury, lamports: quote.lamports, checkoutId: quote.checkoutId, signature: nextSignature });
         },
       });
     }
-    savePendingDevnetPayment(storage, { productId: quote.productId, wallet: wallet.publicKey, treasury: quote.treasury, lamports: quote.lamports, signature });
-    const result = await unlock(quote.productId, signature);
+    savePendingDevnetPayment(storage, { productId: quote.productId, wallet: wallet.publicKey, treasury: quote.treasury, lamports: quote.lamports, checkoutId: quote.checkoutId, signature });
+    const result = await unlock(quote.productId, signature, quote.checkoutId);
     if (!result.verified || result.network !== "devnet" || result.productId !== quote.productId || result.lamports !== quote.lamports) {
       throw new SolanaWalletError("invalid_unlock_response", "The server unlock response did not match the Devnet quote.", signature);
     }

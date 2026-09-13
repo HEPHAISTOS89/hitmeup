@@ -15,7 +15,7 @@ import type { CosmeticQuote, CosmeticUnlockResult } from "./types";
 const PAYER = "Vote111111111111111111111111111111111111111";
 const TREASURY = "ComputeBudget111111111111111111111111111111";
 const SIGNATURE = "5".repeat(88);
-const quote: CosmeticQuote = { network: "devnet", productId: "profile-frame", label: "Profile frame", lamports: 10_000_000, treasury: TREASURY };
+const quote: CosmeticQuote = { network: "devnet", productId: "profile-frame", label: "Profile frame", lamports: 10_000_000, treasury: TREASURY, checkoutId: "00000000-0000-4000-8000-000000000001" };
 
 function storage() {
   const values = new Map<string, string>();

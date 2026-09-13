@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AvatarConfig, ListingKind } from "../types";
+import type { AvatarConfig, AvatarMarketplaceProjection, ListingKind, RewardSummary } from "../types";
 import { isServiceCategory, subcategoriesFor } from "../service-taxonomy";
 
 export class DataValidationError extends Error {
@@ -189,6 +189,15 @@ export async function ensureProfile(client: SupabaseClient, input: ProfileInput)
   }));
 }
 
+export async function linkVerifiedProfileWallet(client: SupabaseClient, userId: string, wallet: string) {
+  const cleanUserId = requiredText(userId, "userId", 160);
+  const cleanWallet = requiredText(wallet, "wallet", 44);
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(cleanWallet)) throw new DataValidationError("wallet is invalid.");
+  const { error } = await client.from("profiles").update({ solana_wallet: cleanWallet, updated_at: new Date().toISOString() }).eq("user_id", cleanUserId);
+  if (error) throw new Error(error.message);
+  return true;
+}
+
 export async function getProfileWallet(client: SupabaseClient, userId: string) {
   const cleanUserId = requiredText(userId, "userId", 160);
   const { data, error } = await client.from("profiles").select("solana_wallet").eq("user_id", cleanUserId).maybeSingle();
@@ -203,25 +212,20 @@ export async function updateProfile(client: SupabaseClient, input: ProfileUpdate
   if (input.displayName !== undefined) payload.displayName = requiredText(input.displayName, "displayName", 60);
   if (input.avatarUrl !== undefined) payload.avatarUrl = input.avatarUrl === null ? null : httpsUrl(input.avatarUrl, "avatarUrl", 500);
   if (input.bio !== undefined) payload.bio = input.bio === null ? null : requiredText(input.bio, "bio", 320);
-  if (input.solanaWallet !== undefined) {
-    if (input.solanaWallet !== null && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(input.solanaWallet)) throw new DataValidationError("solanaWallet is invalid.");
-    payload.solanaWallet = input.solanaWallet;
-  }
+  if (input.solanaWallet !== undefined) throw new DataValidationError("Use the signed wallet-link flow.");
   if (input.interests !== undefined) {
     if (!Array.isArray(input.interests) || input.interests.length > 20) throw new DataValidationError("interests is invalid.");
     payload.interests = input.interests.map((value) => requiredText(value, "interest", 50));
   }
   if (input.avatarConfig !== undefined) payload.avatarConfig = validatedAvatarConfig(input.avatarConfig);
   if (Object.keys(payload).length === 0) throw new DataValidationError("At least one profile field is required.");
-  return unwrap(client.rpc("update_my_profile", {
+  return unwrap(client.rpc("update_my_profile_without_wallet", {
     set_display_name: input.displayName !== undefined,
     target_display_name: payload.displayName ?? null,
     set_avatar_url: input.avatarUrl !== undefined,
     target_avatar_url: payload.avatarUrl ?? null,
     set_bio: input.bio !== undefined,
     target_bio: payload.bio ?? null,
-    set_solana_wallet: input.solanaWallet !== undefined,
-    target_solana_wallet: payload.solanaWallet ?? null,
     set_interests: input.interests !== undefined,
     target_interests: payload.interests ?? null,
     set_avatar_config: input.avatarConfig !== undefined,
@@ -377,17 +381,47 @@ export async function markNotificationsRead(client: SupabaseClient, ids?: string
   return unwrap(client.rpc("mark_my_notifications_read", { target_ids: ids ?? null }));
 }
 
-export async function claimCosmeticUnlock(client: SupabaseClient, userId: string, sku: string, signature: string, wallet: string) {
+export async function claimCosmeticUnlock(client: SupabaseClient, userId: string, sku: string, signature: string, wallet: string, lamports: number, quoteId: string) {
   const cleanUserId = requiredText(userId, "userId", 160);
   const cleanSku = requiredText(sku, "sku", 80);
   const cleanSignature = requiredText(signature, "signature", 100);
   const cleanWallet = requiredText(wallet, "wallet", 44);
+  if (!Number.isSafeInteger(lamports) || lamports <= 0) throw new DataValidationError("lamports is invalid.");
+  assertUuid(quoteId, "quoteId");
   return unwrap(client.rpc("claim_profile_customization", {
     target_user_id: cleanUserId,
     target_sku: cleanSku,
     target_signature: cleanSignature,
     target_wallet: cleanWallet,
+    target_lamports: lamports,
+    target_quote_id: quoteId,
   }));
+}
+
+export async function reserveCosmeticQuote(client: SupabaseClient, userId: string, sku: string, lamports: number, clientKey: string) {
+  if (!Number.isSafeInteger(lamports) || lamports <= 0) throw new DataValidationError("lamports is invalid.");
+  assertUuid(clientKey, "clientKey");
+  return unwrap<string>(client.rpc("reserve_profile_purchase_quote", {
+    target_user_id: requiredText(userId, "userId", 160),
+    target_sku: requiredText(sku, "sku", 80),
+    target_lamports: lamports,
+    target_client_key: clientKey,
+  }));
+}
+
+export async function getSolanaProductState(client: SupabaseClient, sku: string) {
+  const cleanSku = requiredText(sku, "sku", 80);
+  const { data, error } = await client.from("avatar_solana_products").select("sku,lamports,active").eq("sku", cleanSku).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.active !== true) return null;
+  return { sku: data.sku, lamports: Number(data.lamports) };
+}
+
+export async function hasPaidCosmeticOwnership(client: SupabaseClient, userId: string, sku: string) {
+  const { data, error } = await client.from("profile_purchase_entitlements").select("purchase_sku")
+    .eq("user_id", requiredText(userId, "userId", 160)).eq("purchase_sku", requiredText(sku, "sku", 80)).maybeSingle();
+  if (error) throw new Error(error.message);
+  return Boolean(data);
 }
 
 export async function listCosmetics(client: SupabaseClient) {
@@ -406,6 +440,49 @@ export async function equipCosmetic(client: SupabaseClient, sku: string) {
   return unwrap(client.rpc("equip_profile_customization", { target_sku: requiredText(sku, "sku", 80) }));
 }
 
+export async function listAvatarMarketplace(client: SupabaseClient): Promise<AvatarMarketplaceProjection[]> {
+  const rows = await unwrap<Array<Record<string, unknown>>>(client.rpc("list_my_avatar_marketplace"));
+  return (rows ?? []).map((row) => ({
+    sku: String(row.sku),
+    label: String(row.label),
+    category: row.category as AvatarMarketplaceProjection["category"],
+    value: String(row.value_key),
+    equipGroup: String(row.equip_group),
+    collections: row.collections as AvatarMarketplaceProjection["collections"],
+    unlockMethod: row.unlock_method as AvatarMarketplaceProjection["unlockMethod"],
+    purchaseSku: typeof row.purchase_sku === "string" ? row.purchase_sku : null,
+    lamports: Number(row.lamports),
+    rewardPoints: Number(row.reward_points),
+    owned: row.owned === true,
+    equipped: row.equipped === true,
+    network: row.network === "devnet" ? "devnet" : null,
+    assetStatus: row.asset_status as AvatarMarketplaceProjection["assetStatus"],
+  }));
+}
+
+export async function setAvatarCosmetic(client: SupabaseClient, sku: string, equipped = true) {
+  if (typeof equipped !== "boolean") throw new DataValidationError("equipped is invalid.");
+  return unwrap(client.rpc("set_my_avatar_cosmetic", {
+    target_sku: requiredText(sku, "sku", 80),
+    target_equipped: equipped,
+  }));
+}
+
+export async function getRewardSummary(client: SupabaseClient): Promise<RewardSummary> {
+  const rows = await unwrap<Array<Record<string, unknown>>>(client.rpc("get_my_reward_summary"));
+  const row = rows?.[0] ?? {};
+  return {
+    balance: Number(row.balance ?? 0),
+    lifetimeEarned: Number(row.lifetime_earned ?? 0),
+    lifetimeSpent: Number(row.lifetime_spent ?? 0),
+    unlockedSkus: Array.isArray(row.unlocked_skus) ? row.unlocked_skus.filter((sku): sku is string => typeof sku === "string") : [],
+  };
+}
+
+export async function unlockRewardCosmetic(client: SupabaseClient, sku: string) {
+  return unwrap(client.rpc("unlock_my_avatar_reward", { target_sku: requiredText(sku, "sku", 80) }));
+}
+
 export async function getMyProfile(client: SupabaseClient) {
   const rows = await unwrap<Array<Record<string, unknown>>>(client.rpc("get_my_profile"));
   const row = rows?.[0];
@@ -416,7 +493,7 @@ export async function getMyProfile(client: SupabaseClient) {
     bio: row.bio,
     eduDomain: row.edu_domain,
     solanaWallet: row.solana_wallet,
-    interests: row.interests,
+    interests: Array.isArray(row.interests) ? row.interests.filter((interest): interest is string => typeof interest === "string") : [],
     avatarConfig: validatedAvatarConfig(row.avatar_config),
     rating: row.rating == null ? null : Number(row.rating),
     ratingCount: row.rating_count,
@@ -438,16 +515,9 @@ export async function listMyReceivedReviews(client: SupabaseClient) {
 
 /** Server-side deterministic ranking; the RPC derives signals from the verified profile. */
 export async function listRecommendedServices(client: SupabaseClient) {
-  const rows = await unwrap<Array<Record<string, unknown>>>(client.rpc("list_recommended_services"));
+  const rows = await unwrap<Array<PublicServiceRow & { score: number | string; explanation: string }>>(client.rpc("list_recommended_services"));
   return (rows ?? []).map((row) => ({
-    id: row.id,
-    title: row.title,
-    category: row.category,
-    description: row.description,
-    priceNote: row.price_note,
-    availability: row.availability_note,
-    approximatePoint: row.approximate_point,
-    provider: { name: row.provider_name, rating: Number(row.adjusted_rating) },
+    ...mapPublicService(row),
     score: Number(row.score),
     explanation: row.explanation,
   }));

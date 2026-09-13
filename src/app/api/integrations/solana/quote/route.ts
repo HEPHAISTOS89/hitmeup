@@ -4,6 +4,8 @@ import { integrationErrorResponse, parseJson } from "@/lib/integrations/api";
 import { getCosmeticQuote } from "@/lib/integrations/solana";
 import { allowRate } from "@/lib/rate-limit";
 import { assertSameOriginMutation } from "@/lib/security";
+import { createServerSupabaseAdminClient, SupabaseConfigurationError } from "@/lib/supabase/factory";
+import { getSolanaProductState, hasPaidCosmeticOwnership, reserveCosmeticQuote } from "@/lib/supabase/repository";
 
 export async function POST(request: Request) {
   try {
@@ -18,11 +20,22 @@ export async function POST(request: Request) {
       );
     }
     const body = await parseJson(request, 8_000);
-    if (typeof body.productId !== "string") {
-      return NextResponse.json({ error: "productId is required", code: "invalid_response" }, { status: 400 });
+    if (typeof body.productId !== "string" || typeof body.checkoutKey !== "string") {
+      return NextResponse.json({ error: "productId and checkoutKey are required", code: "invalid_response" }, { status: 400 });
     }
-    return NextResponse.json(getCosmeticQuote(body.productId));
+    const quote = getCosmeticQuote(body.productId);
+    const admin = createServerSupabaseAdminClient();
+    const product = await getSolanaProductState(admin, body.productId);
+    if (!product || product.lamports !== quote.lamports) {
+      return NextResponse.json({ error: "The Devnet catalog is not synchronized.", code: "configuration" }, { status: 503 });
+    }
+    if (await hasPaidCosmeticOwnership(admin, auth.student.sub, body.productId)) {
+      return NextResponse.json({ error: "This cosmetic is already owned.", code: "already_owned" }, { status: 409 });
+    }
+    const checkoutId = await reserveCosmeticQuote(admin, auth.student.sub, body.productId, quote.lamports, body.checkoutKey);
+    return NextResponse.json({ ...quote, checkoutId });
   } catch (error) {
+    if (error instanceof SupabaseConfigurationError) return NextResponse.json({ error: "Cosmetic quotes are not configured.", code: "configuration" }, { status: 503 });
     return integrationErrorResponse(error);
   }
 }

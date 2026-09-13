@@ -14,6 +14,7 @@ import {
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, updateProfile } from "@/lib/client-api";
 import { HitMeUpLogo } from "./hitmeup-logo";
+import styles from "./login.module.css";
 
 export type EntryState =
   | "splash"
@@ -74,30 +75,35 @@ function Arrival({ onContinue }: { onContinue: () => void }) {
 
 function Login() {
   return (
-    <main className="entry-screen login-screen">
-      <section className="login-context" aria-label="How HitMeUp protects students">
-        <div className="login-path" aria-hidden="true"><span /><span /><span /></div>
-        <HitMeUpLogo size={68} />
-        <p className="entry-kicker">PRIVATE CAMPUS EXCHANGE</p>
-        <h1>People nearby.<br />Addresses nowhere.</h1>
-        <div className="entry-proof-list">
-          <span><BadgeCheck size={17} /> University sign-in gates the network.</span>
-          <span><MapPinned size={17} /> Discovery uses approximate service areas.</span>
-          <span><LockKeyhole size={17} /> Exact sharing is voluntary and service-scoped.</span>
+    <main className={styles.screen}>
+      <section className={styles.campus} aria-label="Texas Tech University campus">
+        <div className={styles.campusHeading}>
+          <p>Texas Tech University</p>
+          <h1><span>People nearby.</span><span className={styles.accent}>Addresses nowhere.</span></h1>
+          <div className={styles.proofList} aria-label="How HitMeUp protects students">
+            <span><BadgeCheck size={17} /> University sign-in gates the network.</span>
+            <span><MapPinned size={17} /> Discovery uses approximate service areas.</span>
+            <span><LockKeyhole size={17} /> Exact sharing is voluntary and service-scoped.</span>
+          </div>
+        </div>
+        <div className={styles.photoCredit}>
+          Photo: <a href="https://commons.wikimedia.org/wiki/File:Texas_Tech_University_April_2022_16_(Administration).jpg" target="_blank" rel="noreferrer">Michael Barera</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a> · cropped
         </div>
       </section>
-      <section className="login-panel" aria-labelledby="login-heading">
-        <div className="brand brand-dark"><HitMeUpLogo size={38} /><span><strong>HitMeUp</strong><small>Student exchange</small></span></div>
-        <p className="entry-kicker">WELCOME</p>
-        <h2 id="login-heading">Verify you belong here.</h2>
-        <p className="login-copy">Use your university Microsoft account. HitMeUp does not support Google sign-in for this initial campus flow.</p>
-        <div className="login-actions">
-          <a className="microsoft-button" href="/auth/login?returnTo=/app">
+      <section className={styles.signIn} aria-labelledby="login-heading">
+        <div className={styles.card}>
+          <div className={styles.brand}><HitMeUpLogo size={78} /><strong>HitMeUp</strong><span>Student exchange</span></div>
+          <p className={styles.eyebrow}>PRIVATE CAMPUS EXCHANGE</p>
+          <h2 id="login-heading">Verify you belong here.</h2>
+          <p className={styles.subtitle}>Use your university Microsoft account. Google sign-in is not supported for this initial campus flow.</p>
+          <div className={styles.actions}>
+          <a className={styles.microsoftButton} href="/auth/login?returnTo=/app">
             <span className="microsoft-mark" aria-hidden="true"><i /><i /><i /><i /></span>
             Continue with Microsoft <ArrowRight size={17} />
           </a>
+          </div>
+          <p className={styles.footnote}>University access is verified through Microsoft. Your exact location is never part of public discovery.</p>
         </div>
-        <p className="login-footnote">University access is verified through Microsoft. Your exact location is never part of public discovery.</p>
       </section>
     </main>
   );

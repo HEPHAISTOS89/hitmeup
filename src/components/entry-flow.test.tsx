@@ -25,6 +25,14 @@ describe("authenticated onboarding", () => {
   afterEach(() => vi.restoreAllMocks());
   afterEach(cleanup);
 
+  it("keeps the verified Microsoft route and privacy proofs in the redesigned login", () => {
+    render(<EntryFlow initialEntry="login" onComplete={vi.fn()} />);
+    expect(screen.getByRole("link", { name: /Continue with Microsoft/ })).toHaveAttribute("href", "/auth/login?returnTo=/app");
+    expect(screen.getByText("University sign-in gates the network.")).toBeInTheDocument();
+    expect(screen.getByText("Exact sharing is voluntary and service-scoped.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "CC BY-SA 4.0" })).toHaveAttribute("href", "https://creativecommons.org/licenses/by-sa/4.0/");
+  });
+
   it("persists the chosen profile fields before advancing to location", async () => {
     const onComplete = vi.fn();
     render(<EntryFlow initialEntry="profile" onComplete={onComplete} />);

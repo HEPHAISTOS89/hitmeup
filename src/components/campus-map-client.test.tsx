@@ -9,6 +9,7 @@ import { SERVICE_CATEGORIES } from "@/lib/service-taxonomy";
 const mapState = vi.hoisted(() => ({
   instances: [] as Array<Record<string, unknown>>,
   workerUrls: [] as string[],
+  popups: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("maplibre-gl", () => {
@@ -61,11 +62,38 @@ vi.mock("maplibre-gl", () => {
     remove() { this.element.remove(); return this; }
   }
 
+  class FakePopup {
+    options: Record<string, unknown>;
+    host?: HTMLElement;
+    wrapper?: HTMLElement;
+    lngLat?: [number, number];
+    remove = vi.fn(() => {
+      this.wrapper?.remove();
+      return this;
+    });
+
+    constructor(options: Record<string, unknown>) {
+      this.options = options;
+      mapState.popups.push(this as unknown as Record<string, unknown>);
+    }
+    setLngLat(value: [number, number]) { this.lngLat = value; return this; }
+    setDOMContent(host: HTMLElement) { this.host = host; return this; }
+    addTo(map: FakeMap) {
+      const wrapper = document.createElement("div");
+      wrapper.className = String(this.options.className ?? "");
+      if (this.host) wrapper.append(this.host);
+      (map.options.container as HTMLElement).append(wrapper);
+      this.wrapper = wrapper;
+      return this;
+    }
+  }
+
   return {
     AttributionControl: class {},
     Map: FakeMap,
     Marker: FakeMarker,
     NavigationControl: class {},
+    Popup: FakePopup,
     setWorkerUrl: (value: string) => mapState.workerUrls.push(value),
   };
 });
@@ -93,6 +121,7 @@ function setOnline(online: boolean) {
 beforeEach(() => {
   mapState.instances.length = 0;
   mapState.workerUrls.length = 0;
+  mapState.popups.length = 0;
   setOnline(true);
   document.documentElement.dataset.theme = "light";
   vi.stubGlobal("ResizeObserver", class {
@@ -178,6 +207,52 @@ describe("campus map interaction and fallback", () => {
     rerender(<CampusMapClient services={services} selectedId="math-midterms" recenterKey={1} onSelect={onSelect} />);
     expect(marker).toHaveAttribute("aria-pressed", "true");
     expect(mapState.instances).toHaveLength(1);
+  });
+
+  it("uses Laura's category icon and taxonomy color without changing marker semantics", () => {
+    const service = SERVICES.find((item) => item.category === "Tutoring")!;
+    render(<CampusMapClient services={[service]} recenterKey={0} onSelect={() => undefined} />);
+    const map = mapState.instances[0] as unknown as FakeMapInstance;
+    act(() => map.emit("load"));
+
+    const marker = screen.getByRole("button", { name: /Approximate service area/ });
+    expect(marker.querySelector(".campus-map-pin-glyph svg")).toBeInTheDocument();
+    expect(marker.closest<HTMLElement>(".campus-map-marker")?.style.getPropertyValue("--marker-color")).toBe("#d79019");
+  });
+
+  it("anchors compact popup content to the selected approximate service area", async () => {
+    const service = SERVICES[0];
+    const { rerender } = render(
+      <CampusMapClient services={[service]} selectedId={service.id} recenterKey={0} onSelect={() => undefined} popupContent={<aside>Compact listing</aside>} />,
+    );
+    const map = mapState.instances[0] as unknown as FakeMapInstance;
+    act(() => map.emit("load"));
+
+    expect(await screen.findByText("Compact listing")).toBeInTheDocument();
+    expect(mapState.popups).toHaveLength(1);
+    expect(mapState.popups[0].options).toMatchObject({
+      anchor: "left",
+      closeButton: false,
+      closeOnClick: false,
+      className: "listing-map-popup",
+    });
+    expect(mapState.popups[0].lngLat).toEqual([service.approximatePosition[1], service.approximatePosition[0]]);
+
+    rerender(<CampusMapClient services={[service]} selectedId={service.id} recenterKey={0} onSelect={() => undefined} />);
+    await waitFor(() => expect((mapState.popups[0].remove as ReturnType<typeof vi.fn>)).toHaveBeenCalled());
+  });
+
+  it("keeps selected popup content available in the offline fallback", async () => {
+    setOnline(false);
+    const service = SERVICES[0];
+    render(
+      <CampusMapClient services={[service]} selectedId={service.id} recenterKey={0} onSelect={() => undefined} popupContent={<aside>Offline listing</aside>} />,
+    );
+
+    expect(await screen.findByText("Offline listing")).toBeInTheDocument();
+    expect(screen.getByText("Offline listing").parentElement).toHaveClass("fallback-listing-popup");
+    const fallbackMarker = screen.getByRole("button", { name: /Approximate service area/ });
+    expect(fallbackMarker.querySelector("svg")).toBeInTheDocument();
   });
 
   it("keeps a transient source error from replacing the entire map", () => {
