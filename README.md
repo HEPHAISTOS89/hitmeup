@@ -75,7 +75,7 @@ private key, auth token, or wallet signing material.
 ## External setup status
 
 - Vercel Production: the server-only and public Production variables are installed,
-  deployment `dpl_AvKMQ13y2mDHpqunbVuXhmFPm6s5` completed successfully, and
+  the latest Production deployment completed successfully, and
   `hitmeup.tech`, `www.hitmeup.tech`, and `hitmeup-eight.vercel.app` are active
   aliases. All three returned HTTP 200 after deployment. No secret value is kept
   in this repository.
@@ -115,13 +115,23 @@ private key, auth token, or wallet signing material.
   authenticated fixture then proved that a new peer message appeared in the live
   Production conversation without a page reload; every fixture was deleted and the
   existing profile was restored afterward.
+  A fresh Advisor pass found the application RPCs limited to authenticated callers
+  with subject-bound checks, but still reports Supabase-owned PostGIS objects in
+  `public`: `spatial_ref_sys` has no RLS and the three `st_estimatedextent`
+  overloads retain client execute grants. Direct revocation from the project role
+  had no effect because those objects are owned by `supabase_admin`. The CRS table
+  is platform metadata, while the extent functions remain a bounded aggregate
+  spatial-privacy risk to resolve through Supabase/platform ownership rather than
+  by moving or reinstalling PostGIS in Production.
 - Gemini: the credential and model are installed in Vercel Production as well as
   Preview/Development. Live model listing and structured generation returned HTTP
   200 during setup. The Production prompt now includes every exact category and
   subcategory pair and the schema includes the Businesses category, preventing a
   valid model response from being silently downgraded because the model had not
-  received the taxonomy. The adapter and explicit deterministic fallback are
-  covered by local tests.
+  received the taxonomy. The deployed `.tech` flow returned a validated Gemini
+  suggestion for a disposable calculus draft after this correction; nothing was
+  published. The adapter and explicit deterministic fallback are covered by local
+  tests.
 - Auth0: the HitMeUp application, Microsoft TTU connection, verified `.edu`
   admission Action, and Supabase third-party-auth bridge are configured. The
   callback, logout and web-origin allowlists include both Production `.tech`
