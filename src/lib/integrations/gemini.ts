@@ -1,5 +1,5 @@
 import { fetchWithTimeout, IntegrationError, readJson } from "./http";
-import { isServiceCategory, subcategoriesFor, type ServiceCategory } from "../service-taxonomy";
+import { CATEGORY_CATALOG, isServiceCategory, SERVICE_CATEGORIES, subcategoriesFor, type ServiceCategory } from "../service-taxonomy";
 
 export type ServiceDraft = {
   title: string;
@@ -119,7 +119,8 @@ export async function suggestService(draft: ServiceDraft): Promise<GeminiSuggest
 
   const model = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  const parts: Array<Record<string, unknown>> = [{ text: `Classify this student service. Return JSON only with category, subcategory, tags, suggestedTitle, riskFlags, searchKeywords. Use only the provided student marketplace taxonomy. Title: ${valid.title}\nDescription: ${valid.description}` }];
+  const taxonomy = Object.fromEntries(CATEGORY_CATALOG.map((item) => [item.id, item.subcategories.map((subcategory) => subcategory.label)]));
+  const parts: Array<Record<string, unknown>> = [{ text: `Classify this student service. Return JSON only with category, subcategory, tags, suggestedTitle, riskFlags, searchKeywords. The category and subcategory must be one exact matching pair from this taxonomy: ${JSON.stringify(taxonomy)}. Title: ${valid.title}\nDescription: ${valid.description}` }];
   if (valid.imageDataUrl) {
     const match = valid.imageDataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
     if (match) parts.push({ inline_data: { mime_type: match[1], data: match[2] } });
@@ -136,7 +137,7 @@ export async function suggestService(draft: ServiceDraft): Promise<GeminiSuggest
           responseSchema: {
             type: "OBJECT",
             properties: {
-              category: { type: "STRING", enum: ["Social", "Services", "Tutoring", "Jobs", "Volunteer", "Clubs", "Activities", "Events", "Help"] },
+              category: { type: "STRING", enum: [...SERVICE_CATEGORIES] },
               subcategory: { type: "STRING" },
               tags: { type: "ARRAY", items: { type: "STRING" }, maxItems: 12 },
               suggestedTitle: { type: "STRING" },

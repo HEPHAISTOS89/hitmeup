@@ -80,6 +80,34 @@ describe("Gemini integration", () => {
     });
   });
 
+  it("sends the complete category and subcategory taxonomy to Gemini", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify({
+        category: "Businesses",
+        subcategory: "Student businesses",
+        tags: ["student", "business"],
+        suggestedTitle: "Campus print shop",
+        riskFlags: [],
+        searchKeywords: ["campus", "printing"],
+      }) }] } }],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(suggestService({ title: "Campus print shop", description: "Student-run printing near campus" })).resolves.toMatchObject({
+      source: "gemini",
+      category: "Businesses",
+      subcategory: "Student businesses",
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      contents: Array<{ parts: Array<{ text: string }> }>;
+      generationConfig: { responseSchema: { properties: { category: { enum: string[] } } } };
+    };
+    expect(body.contents[0].parts[0].text).toContain('"Tutoring":["Tutoring","Homework help","Study sessions","Exam prep","Coding help","Languages"]');
+    expect(body.generationConfig.responseSchema.properties.category.enum).toContain("Businesses");
+  });
+
   it("does not hide fallback behavior behind an AI label", () => {
     expect(deterministicSuggestion({ title: "", description: "Math tutoring" }).source).toBe("deterministic-fallback");
   });

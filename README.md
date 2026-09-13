@@ -9,7 +9,7 @@ two-party completion, and required bilateral ratings.
 
 - Next.js 16, React 19, TypeScript and Tailwind CSS
 - MapLibre GL JS 6.9.0 with key-free OpenFreeMap vector styles
-- Supabase Postgres and RLS (Development project `olifkkohqhkcottaiqbs`; historical Production reconciliation is documented separately)
+- Supabase Postgres and RLS (Development project `olifkkohqhkcottaiqbs`; Production project `audoriergtssfvarbeiy`)
 - Same-origin SSE conversation stream over participant-safe message projections
 - Auth0 student-domain Action plus Microsoft university login and Supabase third-party auth
 - Gemini recommendation/classification routes with a deterministic fallback
@@ -74,11 +74,11 @@ private key, auth token, or wallet signing material.
 
 ## External setup status
 
-- Development boundary: hosted runtime variables are installed only for Vercel
-  Preview and Development. The server Supabase secret was refreshed in both
-  environments, and a new deployment completed; the deployed Preview loaded
-  stably. Production remains unconfigured and has no claimed application
-  deployment.
+- Vercel Production: the server-only and public Production variables are installed,
+  deployment `dpl_AvKMQ13y2mDHpqunbVuXhmFPm6s5` completed successfully, and
+  `hitmeup.tech`, `www.hitmeup.tech`, and `hitmeup-eight.vercel.app` are active
+  aliases. All three returned HTTP 200 after deployment. No secret value is kept
+  in this repository.
 - Supabase Development: project `olifkkohqhkcottaiqbs` has the six active schema
   migrations, 11 RLS-protected tables, PostGIS under `extensions`, and the Auth0
   third-party authentication integration enabled for the HitMeUp tenant. A
@@ -107,25 +107,39 @@ private key, auth token, or wallet signing material.
   The hardening pass made the safe profile view security-invoker, denied client
   access to rate-limit rows and trigger helpers, consolidated service policies,
   and added all eight missing foreign-key indexes without changing the app RPC
-  contract.
-- Gemini: a Development credential is installed in Vercel Preview/Development;
-  live model listing and structured generation returned HTTP 200, and the
-  adapter plus deterministic fallback are covered by local tests.
+  contract. A comprehensive rollback-only two-student Production transaction also
+  verified marketplace filtering/recommendations; accepted, rejected and cancelled
+  requests; bidirectional chat; notification fan-out/read state; mutual location
+  reveal, revocation and expiry; bilateral completion; ratings; the required-rating
+  gate; aggregate projections; and complete rollback. A separate disposable
+  authenticated fixture then proved that a new peer message appeared in the live
+  Production conversation without a page reload; every fixture was deleted and the
+  existing profile was restored afterward.
+- Gemini: the credential and model are installed in Vercel Production as well as
+  Preview/Development. Live model listing and structured generation returned HTTP
+  200 during setup. The Production prompt now includes every exact category and
+  subcategory pair and the schema includes the Businesses category, preventing a
+  valid model response from being silently downgraded because the model had not
+  received the taxonomy. The adapter and explicit deterministic fallback are
+  covered by local tests.
 - Auth0: the HitMeUp application, Microsoft TTU connection, verified `.edu`
-  admission Action, and Supabase third-party-auth bridge are configured. A real
-  TTU Microsoft Authorization Code + PKCE callback and authenticated session were
-  proven on the deployed Preview. This does not claim any separate Production
-  Auth0/application deployment.
-- Solana: the Devnet treasury and RPC settings are installed for Vercel
-  Preview/Development, and wallet/receipt boundaries are covered by tests. The
-  treasury balance is zero and public Devnet airdrop attempts were rate-limited,
-  so no real cosmetic transfer is claimed.
+  admission Action, and Supabase third-party-auth bridge are configured. The
+  callback, logout and web-origin allowlists include both Production `.tech`
+  origins. A real TTU Microsoft Authorization Code + PKCE callback and authenticated
+  Production session were proven on `hitmeup.tech`.
+- Solana: the Devnet treasury and RPC settings are installed in Vercel Production,
+  and wallet/receipt boundaries are covered by tests, including fail-closed rejection
+  of a transaction without confirmation metadata. The treasury remains unfunded, so
+  no real cosmetic transfer is claimed.
 - Tiger Data: the remote `hitmeup-development` service is ready, its TLS
   connection passes, and append/readback plus invalid-event rejection were
-  verified. Its database URL and salts are installed in Vercel
-  Preview/Development; nothing is read from `.env.local`.
-- Domain: `hitmeup.tech` is pending teammate DNS access and currently must not be
-  treated as a live application URL.
+  verified. Its database URL, enable flag and dedicated Production salt are installed
+  in Vercel Production; a fresh read-only check confirmed the append-only table is
+  reachable. The current Tiger service is still explicitly tagged Development, so a
+  separately provisioned Production analytics service remains an operational
+  isolation improvement rather than a falsely claimed completion.
+- Domain: `hitmeup.tech` and `www.hitmeup.tech` resolve to the active Vercel
+  Production deployment and are configured as canonical application origins.
 - Vultr: do not provision resources until promotional-credit access is verified.
 
 ## Integration boundaries
