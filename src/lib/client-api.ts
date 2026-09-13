@@ -48,7 +48,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-type BackendService = {
+export type BackendService = {
   id: string;
   provider: {
     name: string;
@@ -100,6 +100,10 @@ function normalizeService(service: BackendService): Service {
   };
 }
 
+export function normalizeServiceSnapshot(services: BackendService[]) {
+  return services.map(normalizeService);
+}
+
 export async function getSession() {
   return apiFetch<SessionProjection>("/api/session");
 }
@@ -121,7 +125,7 @@ export async function getServices(filters?: {
   if (filters?.subcategory) params.set("subcategory", filters.subcategory);
   const suffix = params.size ? `?${params}` : "";
   const result = await apiFetch<{ services: BackendService[] }>(`/api/data/services${suffix}`);
-  return result.services.map(normalizeService);
+  return normalizeServiceSnapshot(result.services);
 }
 
 export function createService(input: {
@@ -218,6 +222,28 @@ export function unlockCosmetic(productId: string, signature: string) {
   });
 }
 
+export type ProductEvent = {
+  name: "service_viewed" | "filter_applied";
+  serviceId?: string;
+  metadata?: {
+    category?: string;
+    source?: "discovery" | "gemini" | "deterministic";
+    view?: "discover" | "service";
+    filter?: "category" | "distance" | "rating" | "availability" | "query" | "temporary" | "permanent";
+  };
+};
+
+/**
+ * Product analytics must never block a user action. The server derives the
+ * actor from the verified session and rejects non-categorical metadata.
+ */
+export async function recordProductEvent(event: ProductEvent) {
+  return apiFetch<{ status: "appended" | "skipped"; eventId?: string; reason?: string }>("/api/integrations/tiger/events", {
+    method: "POST",
+    body: JSON.stringify(event),
+  });
+}
+
 export type ServiceSuggestion = {
   category: string;
   subcategory: string;
@@ -225,11 +251,59 @@ export type ServiceSuggestion = {
   suggestedTitle: string;
   riskFlags: string[];
   searchKeywords: string[];
+  suggestedPriceNote: string;
+  availabilityNote: string;
+  explanation: string;
   source: "gemini" | "deterministic-fallback";
 };
 
-export function suggestServiceDraft(input: { title: string; description: string }) {
+export function suggestServiceDraft(input: {
+  title: string;
+  description: string;
+  category?: ServiceCategory;
+  subcategory?: string;
+  availability?: string;
+  price?: string;
+}) {
   return apiFetch<ServiceSuggestion>("/api/integrations/gemini", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export type DiscoverySuggestion = {
+  query: string;
+  category: ServiceCategory | null;
+  subcategory: string | null;
+  radiusMiles: number | null;
+  minimumRating: number | null;
+  availability: "now" | "today" | "this-week" | "any" | null;
+  listingKind: ListingKind | "all" | null;
+  source: "gemini" | "deterministic-fallback";
+};
+
+export function interpretDiscovery(query: string) {
+  return apiFetch<DiscoverySuggestion>("/api/gemini/discover", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  });
+}
+
+export type RecommendationExplanation = {
+  explanation: string;
+  source: "gemini" | "deterministic-fallback";
+};
+
+export function explainServiceRecommendation(input: {
+  title: string;
+  category: ServiceCategory;
+  subcategory?: string;
+  approvedInterests?: string[];
+  distanceMiles: number;
+  adjustedRating: number;
+  deterministicExplanation: string;
+}) {
+  return apiFetch<RecommendationExplanation>("/api/gemini/explain", {
     method: "POST",
     body: JSON.stringify(input),
   });

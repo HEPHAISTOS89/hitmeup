@@ -45,21 +45,26 @@ import {
   getRequests,
   getServices,
   getSharedLocation,
+  interpretDiscovery,
   markNotificationsRead,
+  normalizeServiceSnapshot,
   postMessage,
+  recordProductEvent,
+  explainServiceRecommendation,
   revokeLocation,
   shareLocation,
   submitRating,
   suggestServiceDraft,
   updateProfile,
   updateRequestStatus,
+  type BackendService,
 } from "@/lib/client-api";
 import { filterAndRankServices } from "@/lib/discovery";
 import { groupProfileActivity, profileActivityDate, profileActivityRoleLabel, providedServiceCount } from "@/lib/profile-experience";
 import { canRevealExactLocation } from "@/lib/privacy";
 import { canTransitionRequest } from "@/lib/request-state";
 import { CATEGORY_CATALOG, SERVICE_CATEGORIES, categoryAccent, categoryDefinition, isServiceCategory, subcategoriesFor, type ServiceIconName } from "@/lib/service-taxonomy";
-import type { CosmeticProjection, ListingKind, NotificationProjection, ProfileProjection, ProfileReview, RequestMessage, RequestStage, Service, ServiceCategory, ServiceRequestSummary, SharedLocation } from "@/lib/types";
+import type { CosmeticProjection, ListingKind, NotificationProjection, ProfileProjection, ProfileReview, RankedService, RequestMessage, RequestStage, Service, ServiceCategory, ServiceRequestSummary, SharedLocation } from "@/lib/types";
 
 const CATEGORIES: Array<ServiceCategory | "All"> = ["All", ...SERVICE_CATEGORIES];
 
@@ -150,6 +155,7 @@ type EntryTarget = EntryState | "app";
 type DataMode = "live" | "preview";
 type SurfaceMode = "default" | "loading" | "offline";
 type ChatConnection = "preview" | "connecting" | "online" | "reconnecting";
+type LiveDataConnection = "preview" | "connecting" | "online" | "reconnecting";
 type ListingFilter = ListingKind | "all";
 
 function profileInitials(profile: ProfileProjection | null) {
@@ -163,6 +169,19 @@ function notificationCopy(notification: NotificationProjection) {
     if (typeof payload.title === "string") return payload.title;
   }
   return notification.type.replaceAll("_", " ");
+}
+
+function preferredCategoriesFromProfile(profile: ProfileProjection | null): ServiceCategory[] {
+  if (!profile) return [];
+  const interests = profile.interests.map((interest) => interest.trim().toLocaleLowerCase()).filter(Boolean);
+  return SERVICE_CATEGORIES.filter((category) => {
+    const definition = categoryDefinition(category);
+    return interests.some((interest) =>
+      interest === category.toLocaleLowerCase()
+      || interest === definition.label.toLocaleLowerCase()
+      || definition.subcategories.some((item) => interest === item.label.toLocaleLowerCase()),
+    );
+  });
 }
 
 function formatMessageTime(value: string) {
@@ -257,7 +276,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [query, setQuery] = useState("");
   const [maxDistanceMiles, setMaxDistanceMiles] = useState(3);
   const [minimumRating, setMinimumRating] = useState(0);
-  const [availableNow, setAvailableNow] = useState(false);
+  const [availabilityWindow, setAvailabilityWindow] = useState<"any" | "now" | "today" | "this-week">("any");
   const [selectedId, setSelectedId] = useState<string | undefined>(dataMode === "preview" ? SERVICES[0]?.id : undefined);
   const [requestOpen, setRequestOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -279,6 +298,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [chatError, setChatError] = useState("");
   const [chatConnection, setChatConnection] = useState<ChatConnection>(dataMode === "preview" ? "preview" : "connecting");
+  const [liveDataConnection, setLiveDataConnection] = useState<LiveDataConnection>(dataMode === "preview" ? "preview" : "connecting");
   const [cosmeticCatalog, setCosmeticCatalog] = useState<CosmeticProjection[]>(dataMode === "preview" ? PREVIEW_COSMETICS : []);
   const [cosmeticsStatus, setCosmeticsStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
   const [requests, setRequests] = useState<ServiceRequestSummary[]>(dataMode === "preview" ? PREVIEW_REQUESTS : []);
@@ -301,10 +321,21 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantSource, setAssistantSource] = useState<"gemini" | "deterministic-fallback" | "template">();
   const [assistantError, setAssistantError] = useState("");
+  const [assistantDetails, setAssistantDetails] = useState<{ explanation: string; tags: string[]; riskFlags: string[]; priceNote: string; availabilityNote: string } | null>(null);
+  const [smartPrompt, setSmartPrompt] = useState("");
+  const [smartBusy, setSmartBusy] = useState(false);
+  const [smartError, setSmartError] = useState("");
+  const [smartResult, setSmartResult] = useState<{ source: "gemini" | "deterministic-fallback" | "preview"; summary: string } | null>(null);
+  const [matchExplanation, setMatchExplanation] = useState<{ serviceId: string; text: string; source: "gemini" | "deterministic-fallback" | "preview" } | null>(null);
+  const [matchExplanationBusy, setMatchExplanationBusy] = useState(false);
+  const [compactViewport, setCompactViewport] = useState(false);
+  const [mapInView, setMapInView] = useState(true);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const mapStageRef = useRef<HTMLElement>(null);
   const shellRef = useRef<HTMLElement>(null);
   const activeRequestIdRef = useRef<string | undefined>(dataMode === "preview" ? PREVIEW_REQUESTS[0]?.id : undefined);
   const requestsFetchGeneration = useRef(0);
+  const preferredCategories = useMemo(() => preferredCategoriesFromProfile(profile), [profile]);
 
   const visibleServices = useMemo(() => filterAndRankServices(
     services,
@@ -313,12 +344,13 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       categories: category === "All" ? [] : [category],
       maxDistanceMiles,
       minimumRating,
-      availableNow,
+      availableNow: availabilityWindow === "now",
+      availability: availabilityWindow,
       listingKind: listingFilter,
       subcategory,
     },
-    [],
-  ), [availableNow, category, listingFilter, maxDistanceMiles, minimumRating, query, services, subcategory]);
+    preferredCategories,
+  ), [availabilityWindow, category, listingFilter, maxDistanceMiles, minimumRating, preferredCategories, query, services, subcategory]);
 
   const presentedServices = visibleServices;
   const selectedCategoryDefinition = category === "All" ? undefined : categoryDefinition(category);
@@ -417,6 +449,64 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     return () => { active = false; window.clearInterval(interval); };
   }, [applyRequestProjection, dataMode]);
 
+  useEffect(() => {
+    if (dataMode === "preview") return;
+    let active = true;
+    const source = new EventSource("/api/data/live?topics=notifications,requests,services", { withCredentials: true });
+    source.onopen = () => { if (active) setLiveDataConnection("online"); };
+    source.addEventListener("ready", () => { if (active) setLiveDataConnection("online"); });
+    source.addEventListener("notifications", (event) => {
+      if (!active) return;
+      try {
+        const payload = JSON.parse(event.data) as { notifications?: NotificationProjection[] };
+        if (Array.isArray(payload.notifications)) {
+          setNotifications(payload.notifications);
+          setNotificationsStatus("ready");
+        }
+        setLiveDataConnection("online");
+      } catch {
+        setLiveDataConnection("reconnecting");
+      }
+    });
+    source.addEventListener("requests", (event) => {
+      if (!active) return;
+      try {
+        const payload = JSON.parse(event.data) as { requests?: ServiceRequestSummary[] };
+        if (Array.isArray(payload.requests)) {
+          const selectedRequestId = activeRequestIdRef.current;
+          const request = selectedRequestId
+            ? payload.requests.find((item) => item.id === selectedRequestId)
+            : payload.requests.find((item) => !["closed", "rejected", "cancelled"].includes(item.status)) ?? payload.requests[0];
+          setRequests(payload.requests);
+          setRequestsStatus("ready");
+          if (request) applyRequestProjection(request);
+          if (request && (!request.location.mine || !request.location.theirs)) setSharedLocation(null);
+        }
+        setLiveDataConnection("online");
+      } catch {
+        setLiveDataConnection("reconnecting");
+      }
+    });
+    source.addEventListener("services", (event) => {
+      if (!active) return;
+      try {
+        const payload = JSON.parse(event.data) as { services?: BackendService[] };
+        if (Array.isArray(payload.services)) {
+          const next = normalizeServiceSnapshot(payload.services);
+          setServices(next);
+          setSelectedId((current) => next.some((service) => service.id === current) ? current : next[0]?.id);
+          setSurfaceMode("default");
+        }
+        setLiveDataConnection("online");
+      } catch {
+        setLiveDataConnection("reconnecting");
+      }
+    });
+    source.addEventListener("stream-error", () => { if (active) setLiveDataConnection("reconnecting"); });
+    source.onerror = () => { if (active) setLiveDataConnection("reconnecting"); };
+    return () => { active = false; source.close(); };
+  }, [applyRequestProjection, dataMode]);
+
   function retryNotifications() {
     if (dataMode === "preview") return;
     setNotificationsStatus("loading");
@@ -497,6 +587,26 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     return () => background.forEach((element) => element.removeAttribute("inert"));
   }, [createOpen, requestOpen, settingsOpen]);
 
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(max-width: 700px)");
+    const update = () => setCompactViewport(query.matches);
+    update();
+    query.addEventListener?.("change", update);
+    return () => query.removeEventListener?.("change", update);
+  }, []);
+
+  useEffect(() => {
+    const map = mapStageRef.current;
+    if (!compactViewport || !map || typeof IntersectionObserver === "undefined") {
+      setMapInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => setMapInView(entry.intersectionRatio >= 0.5), { threshold: [0, 0.5] });
+    observer.observe(map);
+    return () => observer.disconnect();
+  }, [compactViewport]);
+
   function resetRequest() {
     setStage("idle");
     setRequesterShared(false);
@@ -554,6 +664,10 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       return;
     }
     setSelectedId(id);
+    setMatchExplanation((current) => current?.serviceId === id ? current : null);
+    if (dataMode === "live" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+      void recordProductEvent({ name: "service_viewed", serviceId: id, metadata: { source: "discovery", view: "service" } }).catch(() => undefined);
+    }
     if (dataMode === "preview" && id !== selectedId) clearActiveRequest();
   }
 
@@ -703,11 +817,99 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     return `https://www.google.com/maps/dir/?api=1&destination=${point[2]},${point[1]}&travelmode=${mode}`;
   }
 
+  async function runSmartDiscovery() {
+    const prompt = smartPrompt.trim();
+    setSmartError("");
+    if (!prompt) {
+      setSmartError("Describe what you need first.");
+      return;
+    }
+    if (dataMode === "preview") {
+      setQuery("calculus");
+      setCategory("Tutoring");
+      setSubcategory("Exam prep");
+      setMaxDistanceMiles(2);
+      setMinimumRating(4.5);
+      setAvailabilityWindow("today");
+      setListingFilter("temporary");
+      setSmartResult({ source: "preview", summary: "Tutoring · Exam prep · within 2 mi · 4.5+ · today" });
+      return;
+    }
+    setSmartBusy(true);
+    try {
+      const result = await interpretDiscovery(prompt);
+      const summary: string[] = [];
+      setQuery(result.query);
+      const resolvedCategory = result.listingKind === "permanent" ? "Businesses" : result.category;
+      const resolvedListingKind = resolvedCategory === "Businesses" ? "permanent" : result.listingKind;
+      const resolvedSubcategory = resolvedCategory && result.subcategory
+        && subcategoriesFor(resolvedCategory).some((item) => item.label === result.subcategory)
+        ? result.subcategory
+        : null;
+      if (resolvedCategory) { setCategory(resolvedCategory); summary.push(resolvedCategory); }
+      if (resolvedSubcategory) { setSubcategory(resolvedSubcategory); summary.push(resolvedSubcategory); }
+      else if (resolvedCategory) setSubcategory(undefined);
+      if (result.radiusMiles !== null) {
+        setMaxDistanceMiles(result.radiusMiles);
+        summary.push(`within ${result.radiusMiles} mi`);
+      }
+      if (result.minimumRating !== null) {
+        setMinimumRating(result.minimumRating);
+        summary.push(`${result.minimumRating}+ stars`);
+      }
+      if (result.availability) {
+        setAvailabilityWindow(result.availability);
+        if (result.availability !== "any") summary.push(result.availability.replaceAll("-", " "));
+      }
+      if (resolvedListingKind) {
+        setListingFilter(resolvedListingKind);
+        summary.push(resolvedListingKind === "temporary" ? "one-off" : resolvedListingKind === "permanent" ? "permanent pin" : "all listings");
+      }
+      setSmartResult({ source: result.source, summary: summary.length ? summary.join(" · ") : result.query || "Search wording refined" });
+      void recordProductEvent({ name: "filter_applied", metadata: { filter: "query", source: result.source === "gemini" ? "gemini" : "deterministic", view: "discover" } }).catch(() => undefined);
+    } catch (error) {
+      setSmartError(error instanceof Error ? error.message : "Smart discovery is unavailable.");
+    } finally {
+      setSmartBusy(false);
+    }
+  }
+
+  async function explainSelectedMatch() {
+    if (!selected || matchExplanationBusy) return;
+    if (matchExplanation?.serviceId === selected.id) {
+      setMatchExplanation(null);
+      return;
+    }
+    if (dataMode === "preview") {
+      setMatchExplanation({ serviceId: selected.id, text: selected.explanation, source: "preview" });
+      return;
+    }
+    setMatchExplanationBusy(true);
+    try {
+      const result = await explainServiceRecommendation({
+        title: selected.title,
+        category: selected.category,
+        subcategory: selected.subcategory,
+        approvedInterests: profile?.interests.slice(0, 8),
+        distanceMiles: selected.distanceMiles,
+        adjustedRating: selected.provider.rating,
+        deterministicExplanation: selected.explanation,
+      });
+      setMatchExplanation({ serviceId: selected.id, text: result.explanation, source: result.source });
+    } catch (error) {
+      setMatchExplanation({ serviceId: selected.id, text: selected.explanation, source: "deterministic-fallback" });
+      setDataError(error instanceof Error ? `${error.message} Showing the local match explanation instead.` : "Showing the local match explanation instead.");
+    } finally {
+      setMatchExplanationBusy(false);
+    }
+  }
+
   async function useWritingAssistant() {
     setAssistantError("");
     if (dataMode === "preview") {
       setServiceDraft({ title: "Calculus problem-set rescue", category: "Tutoring", subcategory: "Homework help", availability: "Today after 4:30 PM", description: "One focused session for the problem you are stuck on. We will work through it together.", price: "$18 / hour" });
       setAssistantSource("template");
+      setAssistantDetails({ explanation: "Matched the draft to tutoring and kept the scope focused on learning together.", tags: ["calculus", "homework help", "one-off"], riskFlags: [], priceNote: "Keep the suggested amount explicit and confirm it in chat.", availabilityNote: "The time window is specific enough for discovery." });
       setDraftReviewed(false);
       return;
     }
@@ -717,7 +919,12 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     }
     setAssistantBusy(true);
     try {
-      const suggestion = await suggestServiceDraft({ title: serviceDraft.title, description: serviceDraft.description });
+      const suggestion = await suggestServiceDraft({
+        title: serviceDraft.title,
+        description: serviceDraft.description,
+        availability: serviceDraft.availability,
+        price: serviceDraft.price,
+      });
       const suggestedCategory = isServiceCategory(suggestion.category)
         ? suggestion.category
         : SUGGESTED_CATEGORY_ALIASES[suggestion.category];
@@ -732,6 +939,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
           ?? (suggestedCategory ? subcategoriesFor(suggestedCategory)[0].label : current.subcategory),
       }));
       setAssistantSource(suggestion.source);
+      setAssistantDetails({ explanation: suggestion.explanation, tags: suggestion.tags, riskFlags: suggestion.riskFlags, priceNote: suggestion.suggestedPriceNote, availabilityNote: suggestion.availabilityNote });
       setDraftReviewed(false);
     } catch (error) {
       setAssistantError(error instanceof Error ? error.message : "Writing assistance is unavailable.");
@@ -785,7 +993,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   }
 
   function resetFilters() {
-    setQuery(""); setCategory("All"); setListingFilter("all"); setSubcategory(undefined); setMaxDistanceMiles(3); setMinimumRating(0); setAvailableNow(false);
+    setQuery(""); setCategory("All"); setListingFilter("all"); setSubcategory(undefined); setMaxDistanceMiles(3); setMinimumRating(0); setAvailabilityWindow("any");
   }
 
   function selectCategoryFilter(next: ServiceCategory | "All") {
@@ -793,6 +1001,9 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     setSubcategory(undefined);
     if (next === "Businesses") setListingFilter("permanent");
     else if (next !== "All" && listingFilter === "permanent") setListingFilter("temporary");
+    if (dataMode === "live" && next !== "All") {
+      void recordProductEvent({ name: "filter_applied", metadata: { filter: "category", category: next.toLocaleLowerCase(), source: "discovery", view: "discover" } }).catch(() => undefined);
+    }
   }
 
   return (
@@ -811,7 +1022,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
           <button className="icon-button" type="button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={notificationsOpen} onClick={toggleNotifications}><Bell size={19} />{unreadCount > 0 && <span className="notification-dot" />}</button>
           <button className="avatar" type="button" aria-label="Open profile" onClick={() => setView("profile")}>{profileInitials(profile)}</button>
         </div>
-        {notificationsOpen && <aside className="notification-popover" aria-label="Notifications"><div className="popover-heading"><span>Notifications</span><button type="button" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><X size={15} /></button></div>{notificationsStatus === "loading" ? <p role="status"><LoaderCircle className="spin" size={16} /> Loading notifications…</p> : notificationsStatus === "error" ? <p className="notification-error" role="alert"><TriangleAlert size={16} /> Notifications could not be loaded. <button type="button" onClick={retryNotifications}>Try again</button></p> : notifications.length ? notifications.slice(0, 3).map((item) => <p key={item.id}><Bell size={16} /> {notificationCopy(item)}</p>) : <p><Bell size={16} /> You&apos;re all caught up. Request updates will appear here.</p>}<button className="text-button" type="button" onClick={() => { setNotificationsOpen(false); setView("requests"); }}>Open requests <ChevronRight size={15} /></button></aside>}
+        {notificationsOpen && <aside className="notification-popover" aria-label="Notifications"><div className="popover-heading"><span>Notifications <small className={`live-data-label live-${liveDataConnection}`}><i />{liveDataConnection === "preview" ? "Preview" : liveDataConnection === "online" ? "Live" : liveDataConnection === "connecting" ? "Connecting" : "Reconnecting"}</small></span><button type="button" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><X size={15} /></button></div>{notificationsStatus === "loading" ? <p role="status"><LoaderCircle className="spin" size={16} /> Loading notifications…</p> : notificationsStatus === "error" ? <p className="notification-error" role="alert"><TriangleAlert size={16} /> Notifications could not be loaded. <button type="button" onClick={retryNotifications}>Try again</button></p> : notifications.length ? notifications.slice(0, 3).map((item) => <p key={item.id}><Bell size={16} /> {notificationCopy(item)}</p>) : <p><Bell size={16} /> You&apos;re all caught up. Request updates will appear here.</p>}<button className="text-button" type="button" onClick={() => { setNotificationsOpen(false); setView("requests"); }}>Open requests <ChevronRight size={15} /></button></aside>}
       </header>
 
       {ratingBlocked && <div className="blocking-banner" role="status"><Star size={16} fill="currentColor" /> Finish your required rating to start another service.<button type="button" onClick={openActiveRequest}>Open rating</button></div>}
@@ -828,12 +1039,22 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
             setSubcategory(undefined);
             if (next === "permanent") setCategory("Businesses");
             else if (category === "Businesses") setCategory("All");
+            if (dataMode === "live" && next !== "all") {
+              void recordProductEvent({ name: "filter_applied", metadata: { filter: next, source: "discovery", view: "discover" } }).catch(() => undefined);
+            }
           }}
         />
         <section className="workspace">
           <aside className="discovery-panel" aria-label="Discovery filters">
             <div className="panel-intro"><p className="eyebrow">DISCOVER NEARBY</p><h1>{listingFilter === "permanent" ? "Local, for longer." : "What are you up for?"}</h1><p className="lede">Plans, help, work, and useful places—organized by what you need now.</p></div>
             <label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search plans, help, or places" aria-label="Search listings" /><kbd>⌘ K</kbd></label>
+            <section className="smart-discovery" aria-labelledby="smart-discovery-title">
+              <div className="smart-discovery-heading"><span className="gemini-mark"><Sparkles size={15} /></span><div><strong id="smart-discovery-title">Ask Gemini to shape the map</strong><small>One sentence becomes category, distance, rating, time and listing filters.</small></div></div>
+              <div className="smart-discovery-compose"><input value={smartPrompt} maxLength={500} onChange={(event) => setSmartPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void runSmartDiscovery(); }} placeholder="e.g. Calculus help within 2 miles, 4.5+, today" aria-label="Describe what you need for Gemini" /><button type="button" disabled={smartBusy || !smartPrompt.trim()} onClick={() => void runSmartDiscovery()}>{smartBusy ? <LoaderCircle className="spin" size={15} /> : <Navigation size={15} />}<span>{smartBusy ? "Thinking" : "Apply"}</span></button></div>
+              {smartError && <p className="smart-error" role="alert"><TriangleAlert size={14} /> {smartError}</p>}
+              {smartResult && <div className="smart-result" role="status"><span>{smartResult.source === "gemini" ? "Gemini" : smartResult.source === "preview" ? "Preview" : "Private fallback"}</span><p>{smartResult.summary}</p><button type="button" onClick={() => { setSmartResult(null); resetFilters(); }}>Clear</button></div>}
+              <p className="smart-privacy"><ShieldCheck size={13} /> Only this prompt is sent. Exact location, identity and private chat stay out.</p>
+            </section>
             {selectedCategoryDefinition && <section className="category-focus" style={{ "--category-accent": selectedCategoryDefinition.accent } as CSSProperties}>
               <div className="category-focus-title"><span><ServiceGlyph name={selectedCategoryDefinition.icon} /></span><div><strong>{selectedCategoryDefinition.label}</strong><p>{selectedCategoryDefinition.description}</p></div></div>
               <div className="subcategory-grid" role="group" aria-label={`${selectedCategoryDefinition.label} subcategories`}>
@@ -841,7 +1062,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
               </div>
             </section>}
             <div className="filter-heading"><span>Fine tune</span><Filter size={15} /></div>
-            <div className="filter-controls"><label><span>Within</span><select value={maxDistanceMiles} onChange={(event) => setMaxDistanceMiles(Number(event.target.value))}><option value={1}>1 mile</option><option value={2}>2 miles</option><option value={3}>3 miles</option></select></label><label><span>Rating</span><select value={minimumRating} onChange={(event) => setMinimumRating(Number(event.target.value))}><option value={0}>Any rating</option><option value={4.5}>4.5+ stars</option><option value={4.8}>4.8+ stars</option></select></label><label className="check-row"><input type="checkbox" checked={availableNow} onChange={(event) => setAvailableNow(event.target.checked)} /><span>Available now</span></label></div>
+            <div className="filter-controls"><label><span>Within</span><select value={maxDistanceMiles} onChange={(event) => { setMaxDistanceMiles(Number(event.target.value)); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "distance", source: "discovery", view: "discover" } }).catch(() => undefined); }}>{![1, 2, 3, 5, 10].includes(maxDistanceMiles) && <option value={maxDistanceMiles}>{maxDistanceMiles} miles</option>}<option value={1}>1 mile</option><option value={2}>2 miles</option><option value={3}>3 miles</option><option value={5}>5 miles</option><option value={10}>10 miles</option></select></label><label><span>Rating</span><select value={minimumRating} onChange={(event) => { setMinimumRating(Number(event.target.value)); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "rating", source: "discovery", view: "discover" } }).catch(() => undefined); }}>{![0, 4, 4.5, 4.8].includes(minimumRating) && <option value={minimumRating}>{minimumRating}+ stars</option>}<option value={0}>Any rating</option><option value={4}>4.0+ stars</option><option value={4.5}>4.5+ stars</option><option value={4.8}>4.8+ stars</option></select></label><label><span>When</span><select value={availabilityWindow} onChange={(event) => { setAvailabilityWindow(event.target.value as "any" | "now" | "today" | "this-week"); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "availability", source: "discovery", view: "discover" } }).catch(() => undefined); }}><option value="any">Any time</option><option value="now">Available now</option><option value="today">Today</option><option value="this-week">This week</option></select></label></div>
             <div className="privacy-note"><ShieldCheck size={19} /><div><strong>People stay approximate</strong><p>Exact meeting points unlock only after acceptance and mutual sharing.</p></div></div>
             <div className="create-actions">
               <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => ratingBlocked ? openActiveRequest() : setCreateOpen(true)}><Plus size={17} /> {ratingBlocked ? "Rate before posting" : "Post something temporary"}</button>
@@ -852,13 +1073,13 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
               {presentedServices.slice(0, 5).map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}>{service.provider.initials}</span><span><strong>{service.title}</strong><small>{service.listingKind === "permanent" ? "Permanent pin" : service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
             </div>
           </aside>
-          <section className="map-stage" aria-label="Campus listings map">
+          <section ref={mapStageRef} className="map-stage" aria-label="Campus listings map">
             {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={selected?.id} recenterKey={recenterKey} onSelect={selectService} />}
-            <div className="map-status"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"}</div>
+            <div className={`map-status live-${liveDataConnection}`} aria-live="polite"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"} · {liveDataConnection === "preview" ? "preview" : liveDataConnection === "online" ? "live" : liveDataConnection === "connecting" ? "connecting" : "reconnecting"}</div>
             <button className="locate-button" type="button" aria-label="Recenter map" onClick={() => setRecenterKey((value) => value + 1)}><LocateFixed size={17} /><span className="locate-label">Recenter</span></button>
             {surfaceMode !== "loading" && surfaceMode !== "offline" && !selected && <EmptyState onReset={() => { resetFilters(); setSurfaceMode("default"); }} />}
           </section>
-          {selected && <aside className="service-inspector" aria-label="Selected listing"><ServicePeek service={selected} onRequest={openSelectedRequest} onBusiness={() => setBusinessModal(selected)} requestDisabled={ratingBlocked} /></aside>}
+          {selected && (!compactViewport || mapInView) && <aside className="service-inspector" aria-label="Selected listing"><ServicePeek service={selected} onRequest={openSelectedRequest} onBusiness={() => setBusinessModal(selected)} requestDisabled={ratingBlocked} onExplain={() => void explainSelectedMatch()} explanation={matchExplanation?.serviceId === selected.id ? matchExplanation : null} explanationBusy={matchExplanationBusy} personalized={preferredCategories.includes(selected.category)} /></aside>}
         </section>
       </section>}
 
@@ -866,7 +1087,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       {view === "profile" && <ProfileView profile={profile} profileStatus={profileStatus} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} cosmeticCatalog={cosmeticCatalog} cosmeticsStatus={cosmeticsStatus} previewMode={dataMode === "preview"} onProfileChange={setProfile} onCatalogChange={setCosmeticCatalog} onResetPreview={() => setProfile({ ...PREVIEW_PROFILE, interests: [...PREVIEW_PROFILE.interests] })} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
       <footer className="trust-strip"><span><BadgeCheck size={16} /> Student email required</span><span><LockKeyhole size={16} /> Mutual location consent</span><span><CircleDollarSign size={16} /> Pay face-to-face</span></footer>
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
-      {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
+      {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} assistantDetails={assistantDetails} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
       {businessModal && <BusinessPinModal service={businessModal === "sponsor" ? undefined : businessModal} onClose={() => setBusinessModal(null)} />}
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </main>
@@ -887,10 +1108,45 @@ function CategoryRail({ activeCategory, listingFilter, services, onCategory, onL
   </div>;
 }
 
-function ServicePeek({ service, onRequest, onBusiness, requestDisabled }: { service: Service; onRequest: () => void; onBusiness: () => void; requestDisabled: boolean }) {
+function ServicePeek({
+  service,
+  onRequest,
+  onBusiness,
+  requestDisabled,
+  onExplain,
+  explanation,
+  explanationBusy,
+  personalized,
+}: {
+  service: RankedService;
+  onRequest: () => void;
+  onBusiness: () => void;
+  requestDisabled: boolean;
+  onExplain: () => void;
+  explanation: { text: string; source: "gemini" | "deterministic-fallback" | "preview" } | null;
+  explanationBusy: boolean;
+  personalized: boolean;
+}) {
   const permanent = service.listingKind === "permanent";
   const definition = categoryDefinition(service.category);
-  return <article className={`service-peek ${permanent ? "is-permanent" : "is-temporary"}`}><div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div><div className="service-peek-mark" style={{ background: service.accent }}><ServiceGlyph name={definition.icon} size={22} /><span>{service.provider.initials}</span></div><div className="service-peek-main"><div className="service-peek-top"><span>{definition.label}</span><span><MapPin size={13} /> {service.distanceMiles.toFixed(1)} mi</span></div><div className={`listing-badge ${permanent ? "permanent" : "temporary"}`}>{permanent ? <><Store size={13} /> Sponsored · permanent</> : <><Clock3 size={13} /> Temporary</>}</div><h2>{service.title}</h2><p>{service.description}</p>{service.subcategory && <div className="subcategory-label"><ServiceGlyph name={definition.subcategories.find((item) => item.label === service.subcategory)?.icon ?? definition.icon} size={14} /> {service.subcategory}</div>}<div className="service-tags">{service.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><div className="provider-line"><strong>{service.provider.name}</strong>{service.provider.verified && <BadgeCheck size={14} />}{service.provider.ratingCount > 0 && <span><Star size={13} fill="currentColor" /> {service.provider.rating} ({service.provider.ratingCount})</span>}</div><div className="inspector-fact"><Clock3 size={15} /><span><small>{permanent ? "Hours" : "Availability"}</small><strong>{service.availability}</strong></span></div><div className="inspector-fact"><ShieldCheck size={15} /><span><small>Location</small><strong>{permanent ? "Public only after business review" : "Approximate zone until mutual consent"}</strong></span></div></div><div className="service-peek-action"><strong>{service.price}</strong><button type="button" onClick={permanent ? onBusiness : onRequest} disabled={!permanent && requestDisabled}>{!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Request help"}<ChevronRight size={16} /></button></div></article>;
+  return <article className={`service-peek ${permanent ? "is-permanent" : "is-temporary"}`}>
+    <div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div>
+    <div className="service-peek-mark" style={{ background: service.accent }}><ServiceGlyph name={definition.icon} size={22} /><span>{service.provider.initials}</span></div>
+    <div className="service-peek-main">
+      <div className="service-peek-top"><span>{definition.label}</span><span><MapPin size={13} /> {service.distanceMiles.toFixed(1)} mi</span></div>
+      <div className={`listing-badge ${permanent ? "permanent" : "temporary"}`}>{permanent ? <><Store size={13} /> Sponsored · permanent</> : <><Clock3 size={13} /> Temporary</>}</div>
+      <h2>{service.title}</h2>
+      <p>{service.description}</p>
+      {service.subcategory && <div className="subcategory-label"><ServiceGlyph name={definition.subcategories.find((item) => item.label === service.subcategory)?.icon ?? definition.icon} size={14} /> {service.subcategory}</div>}
+      <div className="service-tags">{service.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
+      <div className="provider-line"><strong>{service.provider.name}</strong>{service.provider.verified && <BadgeCheck size={14} />}{service.provider.ratingCount > 0 && <span><Star size={13} fill="currentColor" /> {service.provider.rating} ({service.provider.ratingCount})</span>}</div>
+      <div className="inspector-fact"><Clock3 size={15} /><span><small>{permanent ? "Hours" : "Availability"}</small><strong>{service.availability}</strong></span></div>
+      <div className="inspector-fact"><ShieldCheck size={15} /><span><small>Location</small><strong>{permanent ? "Public only after business review" : "Approximate zone until mutual consent"}</strong></span></div>
+      <button className="match-explain-toggle" type="button" onClick={onExplain} disabled={explanationBusy}>{explanationBusy ? <LoaderCircle className="spin" size={14} /> : <Sparkles size={14} />} {explanation ? "Hide match reason" : personalized ? "Why this is for you" : "Why this match"}</button>
+      {explanation && <div className="match-explanation" role="status"><span>{explanation.source === "gemini" ? "GEMINI EXPLANATION" : explanation.source === "preview" ? "PREVIEW EXPLANATION" : "PRIVATE FALLBACK"}</span><p>{explanation.text}</p><small>Uses only public listing signals and your approved profile interests.</small></div>}
+    </div>
+    <div className="service-peek-action"><strong>{service.price}</strong><button type="button" onClick={permanent ? onBusiness : onRequest} disabled={!permanent && requestDisabled}>{!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Request help"}<ChevronRight size={16} /></button></div>
+  </article>;
 }
 
 function EmptyState({ onReset }: { onReset: () => void }) {
@@ -1196,7 +1452,17 @@ function BusinessPinModal({ service, onClose }: { service?: Service; onClose: ()
 
 type ServiceDraft = { title: string; category: ServiceCategory; subcategory: string; availability: string; description: string; price: string };
 
-function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantBusy, assistantSource, assistantError, onAssistant, onSubmit, onClose }: { draft: ServiceDraft; setDraft: Dispatch<SetStateAction<ServiceDraft>>; reviewed: boolean; setReviewed: (value: boolean) => void; assistantBusy: boolean; assistantSource?: "gemini" | "deterministic-fallback" | "template"; assistantError: string; onAssistant: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onClose: () => void }) {
+function assistantRiskCopy(flag: string) {
+  const copy: Record<string, string> = {
+    "academic-integrity-review": "Academic-integrity review needed",
+    "payment-or-credential-safety-review": "Payment or credential safety review needed",
+    "prohibited-or-unsafe-content-review": "Potentially unsafe content needs review",
+    "personal-contact-info-review": "Remove personal contact information",
+  };
+  return copy[flag] ?? flag.replaceAll("-", " ");
+}
+
+function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantBusy, assistantSource, assistantError, assistantDetails, onAssistant, onSubmit, onClose }: { draft: ServiceDraft; setDraft: Dispatch<SetStateAction<ServiceDraft>>; reviewed: boolean; setReviewed: (value: boolean) => void; assistantBusy: boolean; assistantSource?: "gemini" | "deterministic-fallback" | "template"; assistantError: string; assistantDetails: { explanation: string; tags: string[]; riskFlags: string[]; priceNote: string; availabilityNote: string } | null; onAssistant: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onClose: () => void }) {
   const [attempted, setAttempted] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const dirty = Object.values(draft).some(Boolean);
@@ -1222,6 +1488,11 @@ function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantB
           <label>Availability <span aria-hidden="true">*</span><input aria-invalid={attempted && !draft.availability.trim()} value={draft.availability} onChange={(event) => setDraft((current) => ({ ...current, availability: event.target.value }))} placeholder="Today after 5 PM" />{attempted && !draft.availability.trim() && <small className="field-error">Say when this one-off offer is available.</small>}</label>
           <label>Description <span aria-hidden="true">*</span><textarea aria-invalid={attempted && !draft.description.trim()} rows={4} maxLength={320} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="What will the other student get?" />{attempted && !draft.description.trim() && <small className="field-error">Describe the task and its boundary.</small>}</label>
           <div className="ai-helper"><div><Sparkles size={17} /><div><strong>{assistantSource === "gemini" ? "Gemini suggestion" : assistantSource === "deterministic-fallback" ? "Rule-based fallback" : assistantSource === "template" ? "Preview template" : "Writing assistant"}</strong><p>{assistantSource ? "Suggestion applied. Review every word before publishing." : "Refine the title and category without publishing automatically."}</p></div></div><button type="button" disabled={assistantBusy} onClick={onAssistant}>{assistantBusy ? "Reviewing…" : "Suggest"}</button></div>
+          {assistantDetails && <section className={`assistant-review ${assistantDetails.riskFlags.length ? "has-risks" : "is-clear"}`} aria-label="Writing assistant review" aria-live="polite">
+            <div><strong>{assistantDetails.riskFlags.length ? "Review before publishing" : "Structured and ready to review"}</strong><p>{assistantDetails.explanation}</p></div>
+            {assistantDetails.tags.length > 0 && <div className="assistant-tags">{assistantDetails.tags.slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}</div>}
+            <ul><li>{assistantDetails.priceNote}</li><li>{assistantDetails.availabilityNote}</li>{assistantDetails.riskFlags.map((flag) => <li className="assistant-risk" key={flag}>{assistantRiskCopy(flag)}</li>)}</ul>
+          </section>}
           {assistantError && <p className="form-error" role="alert">{assistantError}</p>}
           <label className="review-check"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed the title, scope and availability.</span></label>
           {attempted && !reviewed && <p className="form-error" role="alert">Review and confirm the offer before publishing.</p>}

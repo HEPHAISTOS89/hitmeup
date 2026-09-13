@@ -98,6 +98,44 @@ describe("live marketplace wiring", () => {
     expect(marketplace).toContain('listingKind: listingFilter === "all" ? undefined : listingFilter');
     expect(marketplace).toContain("item.label === suggestion.subcategory");
   });
+
+  it("subscribes to participant-safe live notifications, requests and approximate services", () => {
+    const marketplace = readFileSync(resolve(process.cwd(), "src/components/campus-marketplace.tsx"), "utf8");
+    expect(marketplace).toContain('new EventSource("/api/data/live?topics=notifications,requests,services"');
+    expect(marketplace).toContain('source.addEventListener("notifications"');
+    expect(marketplace).toContain('source.addEventListener("requests"');
+    expect(marketplace).toContain('source.addEventListener("services"');
+    expect(marketplace).toContain("normalizeServiceSnapshot(payload.services)");
+  });
+});
+
+describe("Gemini-assisted campus discovery", () => {
+  it("turns a sentence into visible map filters in preview without replacing manual search", () => {
+    render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
+
+    const prompt = screen.getByRole("textbox", { name: "Describe what you need for Gemini" });
+    fireEvent.change(prompt, { target: { value: "Calculus help within 2 miles, 4.5+, today" } });
+    fireEvent.click(screen.getByRole("button", { name: /Apply/i }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("Tutoring · Exam prep · within 2 mi · 4.5+ · today");
+    expect(screen.getByRole("group", { name: "Tutoring / Academic subcategories" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Search listings" })).toHaveValue("calculus");
+  });
+
+  it("explains a selected match using an explicit, privacy-labeled action", () => {
+    render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
+    fireEvent.click(screen.getByRole("button", { name: /Why this/i }));
+    expect(screen.getByText("PREVIEW EXPLANATION")).toBeInTheDocument();
+    expect(screen.getByText(/public listing signals and your approved profile interests/i)).toBeInTheDocument();
+  });
+
+  it("shows the richer listing review before the user can publish", () => {
+    render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
+    fireEvent.click(screen.getByRole("button", { name: /Post something temporary/i }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Suggest" }));
+    expect(screen.getByRole("region", { name: "Writing assistant review" })).toHaveTextContent("Structured and ready to review");
+    expect(screen.getByRole("region", { name: "Writing assistant review" })).toHaveTextContent("calculus");
+  });
 });
 
 describe("motion preferences", () => {

@@ -406,6 +406,7 @@ export function AvatarStudio({
         <section className="cosmetic-zone devnet-zone" aria-labelledby="devnet-catalog-title">
           <div className="zone-heading"><div><span className="section-kicker">PREMIUM · DEVNET</span><h3 id="devnet-catalog-title">Collectible layers</h3></div><span className="network-pill">Devnet only</span></div>
           <p className="zone-intro">Cosmetics decorate profiles only. Student service payments remain off-platform and between students.</p>
+          <ol className="solana-story" aria-label="Solana Devnet cosmetic flow"><li><span>1</span><strong>Preview</strong></li><li><span>2</span><strong>Connect</strong></li><li><span>3</span><strong>Verify on-chain</strong></li><li><span>4</span><strong>Equip</strong></li></ol>
           <div className="premium-grid">{premiumProducts.map((item) => {
             const visual = PRODUCT_VISUALS[item.sku];
             return <article className="premium-item" key={item.sku}>

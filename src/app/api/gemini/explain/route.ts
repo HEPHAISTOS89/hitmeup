@@ -3,30 +3,57 @@ import { requireVerifiedStudent } from "@/lib/auth0";
 import { allowRate } from "@/lib/rate-limit";
 import { assertSameOriginMutation } from "@/lib/security";
 import { integrationErrorResponse, parseJson } from "@/lib/integrations/api";
-import { fetchWithTimeout, readJson } from "@/lib/integrations/http";
+import { explainRecommendation } from "@/lib/integrations/gemini";
+import { isServiceCategory, type ServiceCategory } from "@/lib/service-taxonomy";
 
 type ExplainRequest = {
   title: string;
   category: string;
-  distanceMiles: number;
-  adjustedRating: number;
+  subcategory?: string;
+  approvedInterests?: string[];
+  distanceBand?: "on-campus" | "nearby" | "within-campus-area" | "far";
+  ratingBand?: "new" | "4+" | "4.5+" | "high";
+  responseBand?: "under-15m" | "15-60m" | "over-60m" | "unknown";
+  completedCountBand?: "none" | "1-10" | "11-50" | "50+";
+  // Legacy clients may send these aggregate inputs. They are bucketed before any model call.
+  distanceMiles?: number;
+  adjustedRating?: number;
   deterministicExplanation: string;
-};
-
-type GeminiPayload = {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
 };
 
 function validRequest(value: unknown): value is ExplainRequest {
   if (!value || typeof value !== "object") return false;
   const input = value as Record<string, unknown>;
   return (
-    typeof input.title === "string" && input.title.length <= 160 &&
-    typeof input.category === "string" && input.category.length <= 80 &&
-    typeof input.distanceMiles === "number" && Number.isFinite(input.distanceMiles) && input.distanceMiles >= 0 && input.distanceMiles <= 100 &&
-    typeof input.adjustedRating === "number" && Number.isFinite(input.adjustedRating) && input.adjustedRating >= 0 && input.adjustedRating <= 5 &&
+    typeof input.title === "string" && input.title.trim().length > 0 && input.title.length <= 160 &&
+    typeof input.category === "string" && isServiceCategory(input.category.trim()) &&
+    (!input.subcategory || (typeof input.subcategory === "string" && input.subcategory.length <= 100)) &&
+    (input.approvedInterests === undefined || (Array.isArray(input.approvedInterests) && input.approvedInterests.length <= 8 && input.approvedInterests.every((item) => typeof item === "string" && item.length <= 48))) &&
+    (input.distanceBand === undefined || ["on-campus", "nearby", "within-campus-area", "far"].includes(String(input.distanceBand))) &&
+    (input.ratingBand === undefined || ["new", "4+", "4.5+", "high"].includes(String(input.ratingBand))) &&
+    (input.responseBand === undefined || ["under-15m", "15-60m", "over-60m", "unknown"].includes(String(input.responseBand))) &&
+    (input.completedCountBand === undefined || ["none", "1-10", "11-50", "50+"].includes(String(input.completedCountBand))) &&
+    (input.distanceMiles === undefined || (typeof input.distanceMiles === "number" && Number.isFinite(input.distanceMiles) && input.distanceMiles >= 0 && input.distanceMiles <= 100)) &&
+    (input.adjustedRating === undefined || (typeof input.adjustedRating === "number" && Number.isFinite(input.adjustedRating) && input.adjustedRating >= 0 && input.adjustedRating <= 5)) &&
     typeof input.deterministicExplanation === "string" && input.deterministicExplanation.length <= 500
   );
+}
+
+function coarseDistance(distanceMiles: number): ExplainRequest["distanceBand"] {
+  if (distanceMiles <= 0.25) return "on-campus";
+  if (distanceMiles <= 1) return "nearby";
+  if (distanceMiles <= 5) return "within-campus-area";
+  return "far";
+}
+
+function coarseRating(rating: number): ExplainRequest["ratingBand"] {
+  if (rating >= 4.5) return "4.5+";
+  if (rating >= 4) return "4+";
+  return "new";
+}
+
+function hasSensitiveInput(value: Record<string, unknown>) {
+  return Object.keys(value).some((key) => /email|coordinate|latitude|longitude|private|chat|message|exact.?location/i.test(key));
 }
 
 export async function POST(request: Request) {
@@ -42,43 +69,19 @@ export async function POST(request: Request) {
       );
     }
     const input: unknown = await parseJson(request, 32_000);
-    if (!validRequest(input)) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
-
-    const fallback = input.deterministicExplanation.slice(0, 180);
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return NextResponse.json({ explanation: fallback, source: "deterministic" });
-
-    const model = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
-    const response = await fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-        body: JSON.stringify({
-          contents: [{
-            role: "user",
-            parts: [{
-              text: [
-                "Rewrite this campus marketplace recommendation in one factual sentence under 24 words.",
-                "Do not add claims, names, prices, or safety guarantees.",
-                `Service: ${input.title}`,
-                `Category: ${input.category}`,
-                `Distance: ${input.distanceMiles.toFixed(1)} miles`,
-                `Adjusted rating: ${input.adjustedRating.toFixed(1)}`,
-                `Source explanation: ${fallback}`,
-              ].join("\n"),
-            }],
-          }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 60 },
-        }),
-      },
-      4_500,
-    );
-    if (!response.ok) return NextResponse.json({ explanation: fallback, source: "deterministic" });
-    const payload = await readJson<GeminiPayload>(response);
-    const generated = payload.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    const safe = generated && generated.length <= 180 ? generated : fallback;
-    return NextResponse.json({ explanation: safe, source: safe === fallback ? "deterministic" : "gemini" });
+    if (!validRequest(input) || hasSensitiveInput(input as Record<string, unknown>)) return NextResponse.json({ error: "Invalid request", code: "invalid_response" }, { status: 400 });
+    const result = await explainRecommendation({
+      title: input.title,
+      category: input.category as ServiceCategory,
+      subcategory: input.subcategory,
+      approvedInterests: input.approvedInterests,
+      distanceBand: input.distanceBand ?? (input.distanceMiles === undefined ? undefined : coarseDistance(input.distanceMiles)),
+      ratingBand: input.ratingBand ?? (input.adjustedRating === undefined ? undefined : coarseRating(input.adjustedRating)),
+      responseBand: input.responseBand,
+      completedCountBand: input.completedCountBand,
+      deterministicExplanation: input.deterministicExplanation,
+    });
+    return NextResponse.json(result);
   } catch (error) {
     return integrationErrorResponse(error);
   }

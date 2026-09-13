@@ -10,9 +10,11 @@ two-party completion, and required bilateral ratings.
 - Next.js 16, React 19, TypeScript and Tailwind CSS
 - MapLibre GL JS 6.9.0 with key-free OpenFreeMap vector styles
 - Supabase Postgres and RLS (Development project `olifkkohqhkcottaiqbs`; Production project `audoriergtssfvarbeiy`)
-- Same-origin SSE conversation stream over participant-safe message projections
+- Same-origin SSE streams for participant-safe conversations, notifications,
+  request state and approximate public service projections
 - Auth0 student-domain Action plus Microsoft university login and Supabase third-party auth
-- Gemini recommendation/classification routes with a deterministic fallback
+- Gemini natural-language discovery, listing review and explainable recommendation
+  routes with privacy-safe deterministic fallbacks
 - Solana Devnet wallet flow reserved for optional cosmetic profile unlocks
 - Tiger Data append-only, pseudonymous product events
 
@@ -141,13 +143,14 @@ private key, auth token, or wallet signing material.
   and wallet/receipt boundaries are covered by tests, including fail-closed rejection
   of a transaction without confirmation metadata. The treasury remains unfunded, so
   no real cosmetic transfer is claimed.
-- Tiger Data: the remote `hitmeup-development` service is ready, its TLS
-  connection passes, and append/readback plus invalid-event rejection were
-  verified. Its database URL, enable flag and dedicated Production salt are installed
-  in Vercel Production; a fresh read-only check confirmed the append-only table is
-  reachable. The current Tiger service is still explicitly tagged Development, so a
-  separately provisioned Production analytics service remains an operational
-  isolation improvement rather than a falsely claimed completion.
+- Tiger Data: Development remains isolated on `hitmeup-development`
+  (`lgfivhw0j9`, DEV), while Vercel Production now points only to the separately
+  provisioned `hitmeup-production` service (`kkddvi1rzl`, PROD). The append-only
+  event migration, owner-only access, TLS connection and a disposable pseudonymous
+  append/readback were verified directly on the Production service. The browser
+  submits only the approved categorical filter/view contract; the server derives
+  and pseudonymizes the actor before storage. Both services currently use Tiger's
+  free shared tier, so capacity, retention and billing must still be monitored.
 - Domain: `hitmeup.tech` and `www.hitmeup.tech` resolve to the active Vercel
   Production deployment and are configured as canonical application origins.
 - Vultr: do not provision resources until promotional-credit access is verified.
@@ -155,8 +158,19 @@ private key, auth token, or wallet signing material.
 ## Integration boundaries
 
 - `POST /api/integrations/gemini` requires a verified student session and returns
-  structured service suggestions. If Gemini is unavailable, it returns an explicit
-  deterministic fallback; the server-only key is never sent to the browser.
+  structured service suggestions including exact taxonomy, search tags, safety flags,
+  and price/availability review notes. `POST /api/gemini/discover` translates one
+  sentence into bounded category, subtype, distance, rating, time and listing-kind
+  filters. `POST /api/gemini/explain` explains a ranking from public listing data,
+  aggregate bands and explicitly approved coarse interests only. If Gemini is
+  unavailable, every route returns an explicit deterministic fallback; exact
+  coordinates, identity, private chat and the server-only key are never sent to the
+  model or browser.
+- `GET /api/data/live` requires the verified Auth0/Supabase session and exposes a
+  same-origin SSE stream of the same safe notifications, request summaries and
+  approximate service DTOs as the ordinary list routes. It polls in bounded
+  intervals, sends heartbeats, closes after a bounded lifetime, and lets EventSource
+  re-authorize on reconnect. Exact meeting points and raw database rows are excluded.
 - `POST /api/integrations/solana/unlock` accepts only confirmed **Devnet** signatures
   paying the configured treasury and product amount, from the wallet linked to the
   authenticated profile. The final idempotent claim uses the server-only
@@ -174,7 +188,9 @@ private key, auth token, or wallet signing material.
 - `POST /api/integrations/tiger/events` is disabled unless
   `TIGER_DATA_ENABLED=true` and either a TLS PostgreSQL URL or an HTTPS ingest
   endpoint/key is configured. It exposes append-only POST events and never
-  mutates the operational database.
+  mutates the operational database. Discovery emits only approved categorical
+  filter/view metadata; actor identity is derived from the verified server session
+  and pseudonymized before storage.
 - Auth0 admission is enforced by `src/lib/auth0.ts` and the Post Login Action in
   `integrations/auth0`; both require `email_verified` and an approved `.edu` domain.
 - Supabase access is centralized in `src/lib/supabase/factory.ts`: browser code can

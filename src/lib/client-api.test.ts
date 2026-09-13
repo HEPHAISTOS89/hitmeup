@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRequest, getCosmeticQuote, getServices, postMessage, submitRating, suggestServiceDraft, unlockCosmetic } from "./client-api";
+import { createRequest, explainServiceRecommendation, getCosmeticQuote, getServices, interpretDiscovery, postMessage, recordProductEvent, submitRating, suggestServiceDraft, unlockCosmetic } from "./client-api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -142,6 +142,9 @@ describe("frontend API contract", () => {
       suggestedTitle: "Debug one Python assignment",
       riskFlags: [],
       searchKeywords: ["python", "debug"],
+      suggestedPriceNote: "Confirm the amount in chat.",
+      availabilityNote: "Add a specific time window.",
+      explanation: "Matched to campus tech help.",
       source: "deterministic-fallback",
     } as const;
     const fetchMock = vi.fn(async () => jsonResponse(suggestion));
@@ -151,6 +154,66 @@ describe("frontend API contract", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/integrations/gemini", expect.objectContaining({
       method: "POST",
       body: JSON.stringify({ title: "Python", description: "Help debug code" }),
+    }));
+  });
+
+  it("turns one natural-language request into bounded discovery filters", async () => {
+    const parsed = {
+      query: "calculus",
+      category: "Tutoring",
+      subcategory: "Exam prep",
+      radiusMiles: 2,
+      minimumRating: 4.5,
+      availability: "today",
+      listingKind: "temporary",
+      source: "gemini",
+    } as const;
+    const fetchMock = vi.fn(async () => jsonResponse(parsed));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(interpretDiscovery("Find highly rated calculus help nearby today")).resolves.toEqual(parsed);
+    expect(fetchMock).toHaveBeenCalledWith("/api/gemini/discover", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ query: "Find highly rated calculus help nearby today" }),
+    }));
+  });
+
+  it("asks for an explainable match using approved coarse interests only", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ explanation: "Nearby calculus help matches your tutoring interest.", source: "gemini" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      title: "Calculus rescue session",
+      category: "Tutoring" as const,
+      subcategory: "Exam prep",
+      approvedInterests: ["Tutoring"],
+      distanceMiles: 0.7,
+      adjustedRating: 4.8,
+      deterministicExplanation: "A strong tutoring match nearby.",
+    };
+
+    await explainServiceRecommendation(input);
+    expect(fetchMock).toHaveBeenCalledWith("/api/gemini/explain", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify(input),
+    }));
+  });
+
+  it("records only categorical discovery analytics and leaves identity binding to the server", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ status: "appended", eventId: "event-1" }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await recordProductEvent({
+      name: "filter_applied",
+      metadata: { filter: "category", category: "tutoring", source: "discovery", view: "discover" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/integrations/tiger/events", expect.objectContaining({
+      method: "POST",
+      credentials: "same-origin",
+      body: JSON.stringify({
+        name: "filter_applied",
+        metadata: { filter: "category", category: "tutoring", source: "discovery", view: "discover" },
+      }),
     }));
   });
 });

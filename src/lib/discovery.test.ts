@@ -58,4 +58,20 @@ describe("service discovery", () => {
 
     expect(result).toEqual([]);
   });
+
+  it("applies Gemini-compatible availability windows without changing legacy available-now behavior", () => {
+    const today = filterAndRankServices(
+      SERVICES,
+      { ...defaults, availability: "today" },
+      [],
+    );
+    const thisWeek = filterAndRankServices(
+      SERVICES,
+      { ...defaults, availability: "this-week" },
+      [],
+    );
+
+    expect(today.length).toBeGreaterThan(0);
+    expect(thisWeek.length).toBeGreaterThanOrEqual(today.length);
+  });
 });
