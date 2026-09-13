@@ -27,7 +27,7 @@ describe("authenticated onboarding", () => {
 
   it("matches Laura's remote login while keeping the verified Microsoft route", () => {
     render(<EntryFlow initialEntry="login" onComplete={vi.fn()} />);
-    expect(screen.getByRole("link", { name: /Continue with Microsoft/ })).toHaveAttribute("href", "/auth/login?returnTo=/app");
+    expect(screen.getByRole("link", { name: /Continue with Microsoft/ })).toHaveAttribute("href", "/auth/login?returnTo=/app&connection=ttu-development");
     expect(screen.getByRole("heading", { name: "Students helping students." })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Welcome back." })).toBeInTheDocument();
     expect(screen.getByText("Verify with your university account.")).toBeInTheDocument();

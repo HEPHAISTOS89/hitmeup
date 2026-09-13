@@ -47,8 +47,9 @@ describe("expanded marketplace taxonomy", () => {
     expect(screen.getByText("2 found")).toBeInTheDocument();
     expect(screen.getByTestId("map")).toHaveTextContent("2 map listings");
     fireEvent.click(screen.getByRole("button", { name: "Select Coffee, snacks, and study tables" }));
-    expect(screen.getByText("Sponsored · permanent")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Business details" })).not.toHaveLength(0);
+    const summary = screen.getByRole("article", { name: "Coffee, snacks, and study tables listing summary" });
+    expect(summary).toHaveTextContent("Businesses");
+    expect(within(summary).getByRole("button", { name: "Business details" })).toBeInTheDocument();
   });
 
   it("discloses the paid-placement boundary without pretending checkout works", () => {
@@ -67,7 +68,7 @@ describe("request selection safety", () => {
     render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Select I need a USB-C charger for an hour" }));
-    fireEvent.click(within(screen.getByRole("complementary", { name: "Selected listing" })).getByRole("button", { name: "Request help" }));
+    fireEvent.click(within(screen.getByRole("article", { name: "I need a USB-C charger for an hour listing summary" })).getByRole("button", { name: "Request help" }));
 
     const drawer = screen.getByRole("dialog");
     expect(within(drawer).getByRole("heading", { name: "I need a USB-C charger for an hour" })).toBeInTheDocument();
@@ -210,11 +211,11 @@ describe("Gemini-assisted campus discovery", () => {
     expect(screen.queryByText("What Gemini receives")).not.toBeInTheDocument();
   });
 
-  it("explains a selected match using an explicit, privacy-labeled action", () => {
+  it("keeps the removed match-explanation card out of the main map", () => {
     render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
-    fireEvent.click(screen.getByRole("button", { name: /Why this/i }));
-    expect(screen.getByText("PREVIEW EXPLANATION")).toBeInTheDocument();
-    expect(screen.getByText(/public listing signals and your approved profile interests/i)).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Selected listing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Why this/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Student email required")).not.toBeInTheDocument();
   });
 
   it("shows the richer listing review before the user can publish", () => {

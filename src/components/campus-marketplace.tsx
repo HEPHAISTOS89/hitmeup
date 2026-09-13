@@ -331,10 +331,7 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
   const [matchExplanationBusy, setMatchExplanationBusy] = useState(false);
   const [serverRecommendations, setServerRecommendations] = useState<Record<string, { score: number; explanation: string }>>({});
   const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
-  const [compactViewport, setCompactViewport] = useState(false);
-  const [mapInView, setMapInView] = useState(true);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
-  const mapStageRef = useRef<HTMLElement>(null);
   const shellRef = useRef<HTMLElement>(null);
   const activeRequestIdRef = useRef<string | undefined>(dataMode === "preview" ? PREVIEW_REQUESTS[0]?.id : undefined);
   const requestsFetchGeneration = useRef(0);
@@ -616,26 +613,6 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     background.forEach((element) => element.setAttribute("inert", ""));
     return () => background.forEach((element) => element.removeAttribute("inert"));
   }, [createOpen, ratingBlocked, requestOpen, settingsOpen]);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia("(max-width: 700px)");
-    const update = () => setCompactViewport(query.matches);
-    update();
-    query.addEventListener?.("change", update);
-    return () => query.removeEventListener?.("change", update);
-  }, []);
-
-  useEffect(() => {
-    const map = mapStageRef.current;
-    if (!compactViewport || !map || typeof IntersectionObserver === "undefined") {
-      setMapInView(true);
-      return;
-    }
-    const observer = new IntersectionObserver(([entry]) => setMapInView(entry.intersectionRatio >= 0.5), { threshold: [0, 0.5] });
-    observer.observe(map);
-    return () => observer.disconnect();
-  }, [compactViewport]);
 
   function resetRequest() {
     setStage("idle");
@@ -1110,7 +1087,6 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
             </section>}
             <div className="filter-heading"><span>Fine tune</span><Filter size={15} /></div>
             <div className="filter-controls"><label><span>Within</span><select value={maxDistanceMiles} onChange={(event) => { setMaxDistanceMiles(Number(event.target.value)); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "distance", source: "discovery", view: "discover" } }).catch(() => undefined); }}>{![1, 2, 3, 5, 10].includes(maxDistanceMiles) && <option value={maxDistanceMiles}>{maxDistanceMiles} miles</option>}<option value={1}>1 mile</option><option value={2}>2 miles</option><option value={3}>3 miles</option><option value={5}>5 miles</option><option value={10}>10 miles</option></select></label><label><span>Rating</span><select value={minimumRating} onChange={(event) => { setMinimumRating(Number(event.target.value)); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "rating", source: "discovery", view: "discover" } }).catch(() => undefined); }}>{![0, 4, 4.5, 4.8].includes(minimumRating) && <option value={minimumRating}>{minimumRating}+ stars</option>}<option value={0}>Any rating</option><option value={4}>4.0+ stars</option><option value={4.5}>4.5+ stars</option><option value={4.8}>4.8+ stars</option></select></label><label><span>When</span><select value={availabilityWindow} onChange={(event) => { setAvailabilityWindow(event.target.value as "any" | "now" | "today" | "this-week"); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "availability", source: "discovery", view: "discover" } }).catch(() => undefined); }}><option value="any">Any time</option><option value="now">Available now</option><option value="today">Today</option><option value="this-week">This week</option></select></label></div>
-            <div className="privacy-note"><ShieldCheck size={19} /><div><strong>People stay approximate</strong><p>Exact meeting points unlock only after acceptance and mutual sharing.</p></div></div>
             <div className="create-actions">
               <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => { if (ratingBlocked) openActiveRequest(); else { setDataError(""); setCreateOpen(true); } }}><Plus size={17} /> {ratingBlocked ? "Rate before posting" : "Post something temporary"}</button>
               <button className="business-button" type="button" onClick={() => setBusinessModal("sponsor")}><Store size={17} /><span><strong>List a business</strong><small>Permanent sponsored pin</small></span><ChevronRight size={16} /></button>
@@ -1120,19 +1096,17 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
               {presentedServices.map((service) => <button className={selected?.id === service.id ? "selected" : ""} type="button" key={service.id} aria-current={selected?.id === service.id ? "true" : undefined} aria-label={`${service.title}, ${service.distanceMiles.toFixed(1)} miles away`} onClick={() => selectService(service.id)}><span className="nearby-avatar" style={{ background: service.accent }}><ServiceGlyph name={categoryDefinition(service.category).icon} size={17} /></span><span><strong>{service.title}</strong><small>{service.listingKind === "permanent" ? "Permanent pin" : service.price} · {service.distanceMiles.toFixed(1)} mi</small></span><ChevronRight size={14} /></button>)}
             </div>
           </aside>
-          <section ref={mapStageRef} className="map-stage" aria-label="Campus listings map">
+          <section className="map-stage" aria-label="Campus listings map">
             {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={selected?.id} recenterKey={recenterKey} onSelect={selectService} popupContent={selected ? <MapListingPopup service={selected} requestDisabled={ratingBlocked} onAction={selected.listingKind === "permanent" ? () => setBusinessModal(selected) : openSelectedRequest} /> : null} />}
             <div className={`map-status live-${liveDataConnection}`} aria-live="polite"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"} · {liveDataConnection === "preview" ? "preview" : liveDataConnection === "online" ? "live" : liveDataConnection === "connecting" ? "connecting" : "reconnecting"}</div>
             <button className="locate-button" type="button" aria-label="Recenter map" onClick={() => setRecenterKey((value) => value + 1)}><LocateFixed size={17} /><span className="locate-label">Recenter</span></button>
             {surfaceMode !== "loading" && surfaceMode !== "offline" && !selected && <EmptyState onReset={() => { resetFilters(); setSurfaceMode("default"); }} />}
           </section>
-          {selected && (!compactViewport || mapInView) && <aside className="service-inspector" aria-label="Selected listing"><ServicePeek service={selected} onRequest={openSelectedRequest} onBusiness={() => setBusinessModal(selected)} requestDisabled={ratingBlocked} requiresGeminiConsent={dataMode === "live"} onExplain={() => void explainSelectedMatch()} explanation={matchExplanation?.serviceId === selected.id ? matchExplanation : null} explanationBusy={matchExplanationBusy} personalized={preferredCategories.includes(selected.category)} /></aside>}
         </section>
       </section>}
 
       {view === "requests" && <RequestsView status={requestsStatus} requests={requests} onBack={() => setView("discover")} onOpen={(request) => { applyRequestProjection(request); if (dataMode === "live") setChatConnection("connecting"); setRequestOpen(true); }} />}
       {view === "profile" && <ProfileView profile={profile} profileStatus={profileStatus} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} previewMode={dataMode === "preview"} marketplaceItems={avatarMarketplace} marketplaceStatus={avatarMarketplaceStatus} onProfileChange={setProfile} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
-      <footer className="trust-strip"><span><BadgeCheck size={16} /> Student email required</span><span><LockKeyhole size={16} /> Mutual location consent</span><span><CircleDollarSign size={16} /> Pay face-to-face</span></footer>
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
       {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} assistantDetails={assistantDetails} submitError={dataError} submitting={actionBusy} requiresGeminiConsent={dataMode === "live"} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
       {businessModal && <BusinessPinModal service={businessModal === "sponsor" ? undefined : businessModal} onClose={() => setBusinessModal(null)} />}

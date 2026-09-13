@@ -61,7 +61,7 @@ export function AppGate({ preview = false, initialView }: { preview?: boolean; i
         <p className="entry-kicker">VERIFIED CAMPUS ACCESS</p>
         <h1>{loading ? "Checking your student access…" : denied ? "This account is not eligible yet." : unavailable ? "Sign-in is unavailable here." : "Verify before entering."}</h1>
         <p>{loading ? "HitMeUp is confirming the minimal session state." : denied ? "Use a verified, approved university Microsoft account. No profile or campus data was opened." : unavailable ? "This environment is missing its authentication configuration. No local account fallback is used." : "Use your university Microsoft account to access student services."}</p>
-        {!loading && <a className="primary-action" href={unavailable ? "/login" : denied ? "/auth/logout?returnTo=/login" : "/auth/login?returnTo=/app"}>{unavailable ? "Back to sign in" : denied ? "Try another account" : "Continue with Microsoft"} <ArrowRight size={16} /></a>}
+        {!loading && <a className="primary-action" href={unavailable ? "/login" : denied ? "/auth/logout?returnTo=/login" : "/auth/login?returnTo=/app&connection=ttu-development"}>{unavailable ? "Back to sign in" : denied ? "Try another account" : "Continue with Microsoft"} <ArrowRight size={16} /></a>}
       </section>
     </main>
   );

@@ -98,7 +98,7 @@ function Login() {
           <h2 id="login-heading">Welcome back.</h2>
           <p className={styles.subtitle}>Verify with your university account.</p>
           <div className={styles.actions}>
-            <a className={styles.microsoftButton} href="/auth/login?returnTo=/app">
+            <a className={styles.microsoftButton} href="/auth/login?returnTo=/app&connection=ttu-development">
               <span className="microsoft-mark" aria-hidden="true"><i /><i /><i /><i /></span>
               Continue with Microsoft <ArrowRight size={17} />
             </a>

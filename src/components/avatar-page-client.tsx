@@ -53,7 +53,7 @@ export function AvatarPageClient({ preview = false }: { preview?: boolean }) {
       {state === "loading" ? <LoaderCircle className="spin" size={24} /> : state === "error" ? <TriangleAlert size={24} /> : <ShieldCheck size={24} />}
       <h1>{state === "loading" ? "Loading your avatar…" : state === "unauthenticated" ? "Verify before customizing." : "Your avatar is temporarily unavailable."}</h1>
       <p>{state === "loading" ? "Checking your profile and saved items." : state === "unauthenticated" ? "Use your university Microsoft account to open the editor." : "No profile or ownership state was changed."}</p>
-      {state !== "loading" && <a className="primary-action" href={state === "unauthenticated" ? "/auth/login?returnTo=/avatar" : appProfileHref}>{state === "unauthenticated" ? "Continue with Microsoft" : "Back to HitMeUp"}</a>}
+      {state !== "loading" && <a className="primary-action" href={state === "unauthenticated" ? "/auth/login?returnTo=/avatar&connection=ttu-development" : appProfileHref}>{state === "unauthenticated" ? "Continue with Microsoft" : "Back to HitMeUp"}</a>}
     </section></main>;
   }
 
