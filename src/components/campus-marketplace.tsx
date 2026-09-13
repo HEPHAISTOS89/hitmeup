@@ -6,7 +6,7 @@ import {
   CircleHelp, CircleDollarSign, Clock3, ClipboardCheck, Code2, Coffee, Compass,
   Crown, Dices, Dumbbell, Filter, Gamepad2, Goal, GraduationCap, Hammer,
   HandHelping, HeartHandshake, Languages, Laptop, LayoutGrid, Library,
-  LocateFixed, LockKeyhole, MapPin, Megaphone, MessageCircle, Mic2, Mountain,
+  LocateFixed, LoaderCircle, LockKeyhole, MapPin, Megaphone, MessageCircle, Mic2, Mountain,
   Music2, Navigation, PackageOpen, Palette, PartyPopper, Pencil, PersonStanding,
   Plus, PlugZap, Presentation, Search, Send, Scissors, Settings2, ShieldCheck,
   ShoppingBag, Sparkles, SprayCan, Star, Store, Ticket, Trash2, Trees,
@@ -287,6 +287,9 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
   const [reviews, setReviews] = useState<ProfileReview[]>(dataMode === "preview" ? PREVIEW_REVIEWS : []);
   const [reviewsStatus, setReviewsStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
   const [notifications, setNotifications] = useState<NotificationProjection[]>([]);
+  const [requestsStatus, setRequestsStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
+  const [profileStatus, setProfileStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
+  const [notificationsStatus, setNotificationsStatus] = useState<"loading" | "ready" | "error">(dataMode === "preview" ? "ready" : "loading");
   const [sharedLocation, setSharedLocation] = useState<SharedLocation | null>(null);
   const [dataError, setDataError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
@@ -394,9 +397,12 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
           setRequests(results[0].value);
           if (request) applyRequestProjection(request);
         }
-      }
-      if (results[1].status === "fulfilled") setProfile(results[1].value);
-      if (results[2].status === "fulfilled") setNotifications(results[2].value);
+        setRequestsStatus("ready");
+      } else if (requestGeneration === requestsFetchGeneration.current) setRequestsStatus("error");
+      if (results[1].status === "fulfilled") { setProfile(results[1].value); setProfileStatus("ready"); }
+      else setProfileStatus("error");
+      if (results[2].status === "fulfilled") { setNotifications(results[2].value); setNotificationsStatus("ready"); }
+      else setNotificationsStatus("error");
       if (results[3].status === "fulfilled") {
         setCosmeticCatalog(results[3].value);
         setCosmeticsStatus("ready");
@@ -410,6 +416,24 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
     const interval = window.setInterval(refresh, 15_000);
     return () => { active = false; window.clearInterval(interval); };
   }, [applyRequestProjection, dataMode]);
+
+  function retryNotifications() {
+    if (dataMode === "preview") return;
+    setNotificationsStatus("loading");
+    void getNotifications()
+      .then((items) => { setNotifications(items); setNotificationsStatus("ready"); })
+      .catch(() => setNotificationsStatus("error"));
+  }
+
+  function toggleNotifications() {
+    const next = !notificationsOpen;
+    setNotificationsOpen(next);
+    if (next && dataMode === "live" && notifications.some((item) => !item.readAt)) {
+      void markNotificationsRead()
+        .then(() => setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() }))))
+        .catch(() => setDataError("Notifications could not be marked as read."));
+    }
+  }
 
   useEffect(() => {
     if (dataMode === "preview" || !activeRequestId || stage === "idle") return;
@@ -779,14 +803,15 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
           <button className={view === "discover" ? "active" : ""} type="button" onClick={() => setView("discover")}><Compass size={17} /> Discover</button>
           <button className={view === "requests" ? "active" : ""} type="button" onClick={() => setView("requests")}><MessageCircle size={17} /> Requests{(ratingBlocked || unreadCount > 0) && <b className="nav-alert">{unreadCount || 1}</b>}</button>
           <button className={view === "profile" ? "active" : ""} type="button" onClick={() => setView("profile")}><UserRound size={17} /> Profile</button>
+          <button className="mobile-notifications-button" type="button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={notificationsOpen} onClick={toggleNotifications}><Bell size={17} /> Notifications{unreadCount > 0 && <b className="nav-alert">{unreadCount}</b>}</button>
         </nav>
         <div className="top-actions">
           {dataMode === "preview" && <span className="session-chip is-preview">Preview data</span>}
           <ThemeToggle />
-          <button className="icon-button" type="button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={notificationsOpen} onClick={() => { const next = !notificationsOpen; setNotificationsOpen(next); if (next && dataMode === "live" && notifications.some((item) => !item.readAt)) void markNotificationsRead().then(() => setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })))).catch(() => undefined); }}><Bell size={19} />{unreadCount > 0 && <span className="notification-dot" />}</button>
+          <button className="icon-button" type="button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={notificationsOpen} onClick={toggleNotifications}><Bell size={19} />{unreadCount > 0 && <span className="notification-dot" />}</button>
           <button className="avatar" type="button" aria-label="Open profile" onClick={() => setView("profile")}>{profileInitials(profile)}</button>
         </div>
-        {notificationsOpen && <aside className="notification-popover" aria-label="Notifications"><div className="popover-heading"><span>Notifications</span><button type="button" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><X size={15} /></button></div>{notifications.length ? notifications.slice(0, 3).map((item) => <p key={item.id}><Bell size={16} /> {notificationCopy(item)}</p>) : <p><Bell size={16} /> You&apos;re all caught up. Request updates will appear here.</p>}<button className="text-button" type="button" onClick={() => { setNotificationsOpen(false); setView("requests"); }}>Open requests <ChevronRight size={15} /></button></aside>}
+        {notificationsOpen && <aside className="notification-popover" aria-label="Notifications"><div className="popover-heading"><span>Notifications</span><button type="button" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><X size={15} /></button></div>{notificationsStatus === "loading" ? <p role="status"><LoaderCircle className="spin" size={16} /> Loading notifications…</p> : notificationsStatus === "error" ? <p className="notification-error" role="alert"><TriangleAlert size={16} /> Notifications could not be loaded. <button type="button" onClick={retryNotifications}>Try again</button></p> : notifications.length ? notifications.slice(0, 3).map((item) => <p key={item.id}><Bell size={16} /> {notificationCopy(item)}</p>) : <p><Bell size={16} /> You&apos;re all caught up. Request updates will appear here.</p>}<button className="text-button" type="button" onClick={() => { setNotificationsOpen(false); setView("requests"); }}>Open requests <ChevronRight size={15} /></button></aside>}
       </header>
 
       {ratingBlocked && <div className="blocking-banner" role="status"><Star size={16} fill="currentColor" /> Finish your required rating to start another service.<button type="button" onClick={openActiveRequest}>Open rating</button></div>}
@@ -837,8 +862,8 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
         </section>
       </section>}
 
-      {view === "requests" && <RequestsView stage={stage} selected={activeService ?? selected} onBack={() => setView("discover")} onOpen={openActiveRequest} />}
-      {view === "profile" && <ProfileView profile={profile} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} cosmeticCatalog={cosmeticCatalog} cosmeticsStatus={cosmeticsStatus} previewMode={dataMode === "preview"} onProfileChange={setProfile} onCatalogChange={setCosmeticCatalog} onResetPreview={() => setProfile({ ...PREVIEW_PROFILE, interests: [...PREVIEW_PROFILE.interests] })} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
+      {view === "requests" && <RequestsView status={requestsStatus} stage={stage} selected={activeService ?? selected} onBack={() => setView("discover")} onOpen={openActiveRequest} />}
+      {view === "profile" && <ProfileView profile={profile} profileStatus={profileStatus} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} cosmeticCatalog={cosmeticCatalog} cosmeticsStatus={cosmeticsStatus} previewMode={dataMode === "preview"} onProfileChange={setProfile} onCatalogChange={setCosmeticCatalog} onResetPreview={() => setProfile({ ...PREVIEW_PROFILE, interests: [...PREVIEW_PROFILE.interests] })} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
       <footer className="trust-strip"><span><BadgeCheck size={16} /> Student email required</span><span><LockKeyhole size={16} /> Mutual location consent</span><span><CircleDollarSign size={16} /> Pay face-to-face</span></footer>
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
       {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
@@ -872,7 +897,7 @@ function EmptyState({ onReset }: { onReset: () => void }) {
   return <div className="empty-state"><span className="empty-icon"><Search size={22} /></span><h2>Nothing matches yet.</h2><p>Try another category, widen the radius, or remove a filter.</p><button className="secondary-button" type="button" onClick={onReset}>Reset filters</button></div>;
 }
 
-function RequestsView({ stage, selected, onBack, onOpen }: { stage: RequestStage; selected?: Service; onBack: () => void; onOpen: () => void }) {
+function RequestsView({ status, stage, selected, onBack, onOpen }: { status: "loading" | "ready" | "error"; stage: RequestStage; selected?: Service; onBack: () => void; onOpen: () => void }) {
   const [tab, setTab] = useState<"active" | "history">("active");
   const active = selected && !["idle", "closed", "rejected", "cancelled"].includes(stage);
   const terminal = selected && ["closed", "rejected", "cancelled"].includes(stage);
@@ -882,10 +907,12 @@ function RequestsView({ stage, selected, onBack, onOpen }: { stage: RequestStage
         <button className="back-button" type="button" onClick={onBack}><ArrowLeft size={16} /> Discover</button>
         <p className="eyebrow">REQUESTS</p><h1>The next step, clear.</h1><p className="secondary-lede">Private conversations move from request to mutual completion—never to a public feed.</p>
         <div className="request-tabs" role="tablist" aria-label="Request groups"><button role="tab" aria-selected={tab === "active"} onClick={() => setTab("active")}>Active</button><button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>History</button></div>
-        {tab === "active" && active && <div className="request-preview"><div><span className="request-preview-kicker">ACTIVE REQUEST</span><h2>{selected.title}</h2><p>{selected.provider.name} · {STAGE_LABEL[stage]}</p></div><button className="primary-action" type="button" onClick={onOpen}>Open request <ChevronRight size={16} /></button></div>}
-        {tab === "active" && !active && <div className="empty-wide"><MessageCircle size={22} /><strong>No active requests.</strong><p>Choose a service on the map to start a private conversation.</p><button className="secondary-button" type="button" onClick={onBack}>Find a service</button></div>}
-        {tab === "history" && terminal && <div className="request-preview history-preview"><div><span className="request-preview-kicker">SERVICE HISTORY</span><h2>{selected.title}</h2><p>{selected.provider.name} · {STAGE_LABEL[stage]}</p></div><button className="secondary-button" type="button" onClick={onOpen}>View outcome</button></div>}
-        {tab === "history" && !terminal && <div className="empty-wide"><Clock3 size={22} /><strong>No service history yet.</strong><p>Completed and cancelled services will appear here.</p></div>}
+        {status === "loading" && <div className="empty-wide" role="status"><LoaderCircle className="spin" size={22} /><strong>Loading requests…</strong><p>Checking your private service activity.</p></div>}
+        {status === "error" && <div className="empty-wide is-error" role="alert"><TriangleAlert size={22} /><strong>Requests could not be loaded.</strong><p>Your service data is still private. Refresh and try again.</p><button className="secondary-button" type="button" onClick={() => window.location.reload()}>Retry</button></div>}
+        {status === "ready" && tab === "active" && active && <div className="request-preview"><div><span className="request-preview-kicker">ACTIVE REQUEST</span><h2>{selected.title}</h2><p>{selected.provider.name} · {STAGE_LABEL[stage]}</p></div><button className="primary-action" type="button" onClick={onOpen}>Open request <ChevronRight size={16} /></button></div>}
+        {status === "ready" && tab === "active" && !active && <div className="empty-wide"><MessageCircle size={22} /><strong>No active requests.</strong><p>Choose a service on the map to start a private conversation.</p><button className="secondary-button" type="button" onClick={onBack}>Find a service</button></div>}
+        {status === "ready" && tab === "history" && terminal && <div className="request-preview history-preview"><div><span className="request-preview-kicker">SERVICE HISTORY</span><h2>{selected.title}</h2><p>{selected.provider.name} · {STAGE_LABEL[stage]}</p></div><button className="secondary-button" type="button" onClick={onOpen}>View outcome</button></div>}
+        {status === "ready" && tab === "history" && !terminal && <div className="empty-wide"><Clock3 size={22} /><strong>No service history yet.</strong><p>Completed and cancelled services will appear here.</p></div>}
       </div>
     </section>
   );
@@ -897,7 +924,7 @@ function formatProfileDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-export function ProfileView({ profile, requests, reviews, reviewsStatus, cosmeticCatalog, cosmeticsStatus, previewMode, onProfileChange, onCatalogChange, onResetPreview, onBack, onSettings }: { profile: ProfileProjection | null; requests: ServiceRequestSummary[]; reviews: ProfileReview[]; reviewsStatus: "loading" | "ready" | "error"; cosmeticCatalog: CosmeticProjection[]; cosmeticsStatus: "loading" | "ready" | "error"; previewMode: boolean; onProfileChange: (profile: ProfileProjection | null) => void; onCatalogChange: (catalog: CosmeticProjection[]) => void; onResetPreview: () => void; onBack: () => void; onSettings: () => void }) {
+export function ProfileView({ profile, profileStatus = "ready", requests, reviews, reviewsStatus, cosmeticCatalog, cosmeticsStatus, previewMode, onProfileChange, onCatalogChange, onResetPreview, onBack, onSettings }: { profile: ProfileProjection | null; profileStatus?: "loading" | "ready" | "error"; requests: ServiceRequestSummary[]; reviews: ProfileReview[]; reviewsStatus: "loading" | "ready" | "error"; cosmeticCatalog: CosmeticProjection[]; cosmeticsStatus: "loading" | "ready" | "error"; previewMode: boolean; onProfileChange: (profile: ProfileProjection | null) => void; onCatalogChange: (catalog: CosmeticProjection[]) => void; onResetPreview: () => void; onBack: () => void; onSettings: () => void }) {
   const displayName = profile?.displayName || "Your profile";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ displayName: "", bio: "", interests: "" });
@@ -950,9 +977,12 @@ export function ProfileView({ profile, requests, reviews, reviewsStatus, cosmeti
 
         <div className="profile-heading profile-identity-heading">
           <div className="profile-avatar abstract-avatar avatar-tone-signal" aria-label="HitMeUp profile avatar"><HitMeUpLogo size={42} /></div>
-          <div className="profile-title-block"><p className="eyebrow">YOUR PROFILE</p><div className="profile-name-line"><h1>{displayName}</h1>{profile && <span className="verified-profile-badge"><BadgeCheck size={14} /> University verified</span>}</div><p className="secondary-lede">{profile?.eduDomain ? `Verified through ${profile.eduDomain}` : "Loading your verified profile…"}</p></div>
-          <div className="profile-heading-actions"><button className="secondary-button" type="button" disabled={!profile} onClick={beginEdit}><Pencil size={15} /> Edit profile</button><button className="secondary-button" type="button" onClick={onSettings}><Settings2 size={15} /> Privacy & safety</button></div>
+          <div className="profile-title-block"><p className="eyebrow">YOUR PROFILE</p><div className="profile-name-line"><h1>{displayName}</h1>{profile && <span className="verified-profile-badge"><BadgeCheck size={14} /> University verified</span>}</div><p className="secondary-lede">{profileStatus === "loading" ? "Loading your verified profile…" : profileStatus === "error" ? "Your profile could not be loaded." : profile?.eduDomain ? `Verified through ${profile.eduDomain}` : "Your profile is ready to customize."}</p></div>
+          <div className="profile-heading-actions"><button className="secondary-button" type="button" disabled={!profile || profileStatus !== "ready"} onClick={beginEdit}><Pencil size={15} /> Edit profile</button><button className="secondary-button" type="button" onClick={onSettings}><Settings2 size={15} /> Privacy & safety</button></div>
         </div>
+
+        {profileStatus === "loading" && <div className="profile-load-state" role="status"><LoaderCircle className="spin" size={17} /> Loading profile details…</div>}
+        {profileStatus === "error" && <div className="profile-load-state is-error" role="alert"><TriangleAlert size={17} /> Profile details could not be loaded. Refresh and try again.</div>}
 
         <div className="profile-stats" aria-label="Profile stats">
           <div><strong>{profile?.completedCount ?? "—"}</strong><span>Completed</span></div>

@@ -4,9 +4,13 @@ import { ArrowRight, LoaderCircle, ShieldCheck, TriangleAlert } from "lucide-rea
 import { useEffect, useState } from "react";
 import { CampusMarketplace } from "./campus-marketplace";
 import { HitMeUpLogo } from "./hitmeup-logo";
-import { ApiError, getSession } from "@/lib/client-api";
+import { ApiError, getProfile, getSession } from "@/lib/client-api";
 
-type GateState = "loading" | "authenticated" | "unauthenticated" | "denied" | "unavailable";
+type GateState = "loading" | "authenticated" | "onboarding" | "unauthenticated" | "denied" | "unavailable";
+
+function needsOnboarding(profile: Awaited<ReturnType<typeof getProfile>>) {
+  return !profile || (profile.displayName === "Student" && !profile.bio && profile.interests.length === 0);
+}
 
 export function AppGate({ preview = false }: { preview?: boolean }) {
   const [state, setState] = useState<GateState>(preview ? "authenticated" : "loading");
@@ -15,7 +19,19 @@ export function AppGate({ preview = false }: { preview?: boolean }) {
     if (preview) return;
     let active = true;
     getSession()
-      .then((session) => { if (active) setState(session.authenticated ? "authenticated" : "unauthenticated"); })
+      .then(async (session) => {
+        if (!active) return;
+        if (!session.authenticated) {
+          setState("unauthenticated");
+          return;
+        }
+        try {
+          const profile = await getProfile();
+          if (active) setState(needsOnboarding(profile) ? "onboarding" : "authenticated");
+        } catch {
+          if (active) setState("unavailable");
+        }
+      })
       .catch((error) => {
         if (!active) return;
         if (error instanceof ApiError && error.status === 401) setState("unauthenticated");
@@ -27,6 +43,9 @@ export function AppGate({ preview = false }: { preview?: boolean }) {
 
   if (state === "authenticated") {
     return <CampusMarketplace initialEntry="app" dataMode={preview ? "preview" : "live"} />;
+  }
+  if (state === "onboarding") {
+    return <CampusMarketplace initialEntry="profile" dataMode="live" />;
   }
 
   const loading = state === "loading";

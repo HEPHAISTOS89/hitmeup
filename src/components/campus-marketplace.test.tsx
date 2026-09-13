@@ -81,6 +81,15 @@ describe("responsive safety affordances", () => {
     expect(marketplace).toContain('aria-label="Recenter map"');
     expect(marketplace).toContain('disabled aria-disabled="true" title="Blocking controls are not available in this release"');
   });
+
+  it("keeps filters and notifications reachable on mobile", () => {
+    const styles = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf8");
+    const marketplace = readFileSync(resolve(process.cwd(), "src/components/campus-marketplace.tsx"), "utf8");
+    expect(styles).toContain(".mobile-notifications-button { display: inline-flex;");
+    expect(styles).toContain(".discover-frame .filter-controls { display: grid; grid-template-columns: 1fr 1fr;");
+    expect(marketplace).toContain('className="mobile-notifications-button"');
+    expect(marketplace).toContain("notificationsStatus === \"loading\"");
+  });
 });
 
 describe("live marketplace wiring", () => {

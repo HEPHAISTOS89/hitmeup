@@ -110,6 +110,29 @@ describe("Solana Devnet boundary", () => {
     expect(result).toMatchObject({ verified: true, network: "devnet", slot: 42 });
   });
 
+  it("rejects a transaction response without confirmation metadata", async () => {
+    vi.stubEnv("SOLANA_TREASURY", "11111111111111111111111111111111");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ result: {
+      slot: 42,
+      transaction: { message: {
+        accountKeys: [
+          { pubkey: "11111111111111111111111111111111", signer: false },
+          { pubkey: "22222222222222222222222222222222", signer: true },
+        ],
+        instructions: [{ program: "system", parsed: { type: "transfer", info: {
+          source: "22222222222222222222222222222222",
+          destination: "11111111111111111111111111111111",
+          lamports: 10_000_000,
+        } } }],
+      } },
+    } }), { status: 200, headers: { "content-type": "application/json" } })));
+    await expect(verifyCosmeticPayment(
+      "2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2",
+      "profile-frame",
+      "22222222222222222222222222222222",
+    )).rejects.toThrow("not confirmed or failed");
+  });
+
   it("rejects a confirmed transfer from a different wallet", async () => {
     vi.stubEnv("SOLANA_TREASURY", "11111111111111111111111111111111");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ result: { slot: 42, meta: { err: null }, transaction: { message: { accountKeys: [{ pubkey: "11111111111111111111111111111111", signer: false }, { pubkey: "22222222222222222222222222222222", signer: true }], instructions: [{ program: "system", parsed: { type: "transfer", info: { source: "22222222222222222222222222222222", destination: "11111111111111111111111111111111", lamports: 10_000_000 } } }] } } } }), { status: 200, headers: { "content-type": "application/json" } })));

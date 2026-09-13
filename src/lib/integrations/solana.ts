@@ -108,7 +108,7 @@ export async function verifyCosmeticPayment(signature: string, productId: string
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [signature, { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 0 }] }),
   });
   const rpc = await readJson<RpcResponse>(response);
-  if (rpc.error || !rpc.result || rpc.result.meta?.err) {
+  if (rpc.error || !rpc.result || !rpc.result.meta || rpc.result.meta.err !== null) {
     throw new IntegrationError("invalid_response", "The Devnet transaction is not confirmed or failed.", 400);
   }
   const transaction = rpc.result;
