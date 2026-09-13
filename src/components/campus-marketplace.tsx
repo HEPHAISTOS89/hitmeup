@@ -865,7 +865,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
       {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
       {businessModal && <BusinessPinModal service={businessModal === "sponsor" ? undefined : businessModal} onClose={() => setBusinessModal(null)} />}
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsModal requests={requests} onClose={() => setSettingsOpen(false)} />}
     </main>
   );
 }
@@ -1003,7 +1003,7 @@ export function ProfileView({ profile, requests, reviews, reviewsStatus, cosmeti
         <div className="profile-heading profile-identity-heading">
           <ProfileAvatarLink previewMode={previewMode} />
           <div className="profile-title-block"><p className="eyebrow">YOUR PROFILE</p><div className="profile-name-line"><h1>{displayName}</h1>{profile && <span className="verified-profile-badge"><BadgeCheck size={14} /> University verified</span>}</div><p className="secondary-lede">{profile?.eduDomain ? `Verified through ${profile.eduDomain}` : "Loading your verified profile…"}</p></div>
-          <div className="profile-heading-actions"><button className="secondary-button" type="button" disabled={!profile} onClick={beginEdit}><Pencil size={15} /> Edit profile</button><button className="secondary-button" type="button" onClick={onSettings}><Settings2 size={15} /> Privacy & safety</button></div>
+          <div className="profile-heading-actions"><button className="secondary-button" type="button" disabled={!profile} onClick={beginEdit}><Pencil size={15} /> Edit profile</button><button className="secondary-button" type="button" onClick={onSettings}><Settings2 size={15} /> Settings</button></div>
         </div>
 
         <div className="profile-stats" aria-label="Profile stats">
@@ -1251,8 +1251,34 @@ function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantB
   );
 }
 
-function SettingsModal({ onClose }: { onClose: () => void }) {
+function SettingsModal({ onClose, requests }: { onClose: () => void; requests: ServiceRequestSummary[] }) {
   const [reportOpen, setReportOpen] = useState(false);
+  const [reportRequest, setReportRequest] = useState("");
+  const [reportType, setReportType] = useState("Safety concern");
+  const [reportDetails, setReportDetails] = useState("");
+  const [draftOpened, setDraftOpened] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+  const contactButton = useRef<HTMLButtonElement>(null);
+  const contactClose = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (contactOpen) contactClose.current?.focus();
+  }, [contactOpen]);
+  function backToSettings() {
+    setContactOpen(false);
+    requestAnimationFrame(() => contactButton.current?.focus());
+  }
+  if (contactOpen) return (
+    <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) backToSettings(); }}>
+      <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="contact-title" style={{ maxWidth: 440 }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); backToSettings(); } else trapDialogFocus(event); }}>
+        <div className="drawer-header"><h2 id="contact-title">Contact us</h2><button ref={contactClose} className="icon-button" type="button" aria-label="Close contact window" onClick={backToSettings}><X size={19} /></button></div>
+        <div className="settings-list">
+          <div><span>Phone</span><a href="tel:+14696316840">(469) 631-6840</a></div>
+          <div><span>Email</span><a href="mailto:RAPHIERAPHX@GMAIL.COM" style={{ overflowWrap: "anywhere" }}>RAPHIERAPHX@GMAIL.COM</a></div>
+        </div>
+        <button className="back-button" type="button" onClick={backToSettings}><ArrowLeft size={16} /> Back to settings</button>
+      </section>
+    </div>
+  );
   return (
     <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
       <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onKeyDown={trapDialogFocus}>
@@ -1264,10 +1290,25 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <div><span><Bell size={16} /> Notifications</span><strong>Requests, messages and service updates</strong></div>
         </div>
         <div className="safety-actions">
+          <button ref={contactButton} type="button" onClick={() => setContactOpen(true)}>Contact us <ChevronRight size={15} /></button>
           <button type="button" onClick={() => setReportOpen(!reportOpen)}>Report a safety issue <ChevronRight size={15} /></button>
           <button type="button" disabled aria-disabled="true" title="Blocking controls are not available in this release">Blocked students <span>Coming soon</span><ChevronRight size={15} /></button>
         </div>
-        {reportOpen && <div className="conditional-safety" role="status"><ShieldCheck size={18} /><div><strong>Tell us what happened.</strong><p>Choose the related request and include only the details the safety team needs.</p></div></div>}
+        {reportOpen && <form className="service-form" aria-label="Report a safety issue" onSubmit={(event) => {
+          event.preventDefault();
+          if (!reportDetails.trim()) return;
+          const related = requests.find((request) => request.id === reportRequest);
+          const body = `Issue: ${reportType}\nRelated request: ${related ? `${related.service.title} (${related.id})` : "Not related to a request"}\n\n${reportDetails.trim()}`;
+          window.location.href = `mailto:RAPHIERAPHX@GMAIL.COM?subject=${encodeURIComponent(`HitMeUp report: ${reportType}`)}&body=${encodeURIComponent(body)}`;
+          setDraftOpened(true);
+        }}>
+          <h3>Tell us what happened</h3>
+          <label>Related request<select value={reportRequest} onChange={(event) => setReportRequest(event.target.value)}><option value="">Not related to a request</option>{requests.map((request) => <option key={request.id} value={request.id}>{request.service.title} — {request.otherParty.name}</option>)}</select></label>
+          <label>Issue type<select value={reportType} onChange={(event) => setReportType(event.target.value)}>{["Safety concern", "Harassment", "Scam or misleading listing", "No-show", "Other"].map((type) => <option key={type}>{type}</option>)}</select></label>
+          <label>Details<textarea required maxLength={1500} rows={4} value={reportDetails} onChange={(event) => { setReportDetails(event.target.value); setDraftOpened(false); }} placeholder="Describe what happened. Avoid including sensitive personal details." /></label>
+          <button className="primary-button" type="submit" disabled={!reportDetails.trim()}>Prepare report email</button>
+          {draftOpened && <p role="status">Email draft requested—not sent yet. If your email app didn’t open, email your report to RAPHIERAPHX@GMAIL.COM.</p>}
+        </form>}
         <div className="settings-footer"><a className="text-button" href="/auth/logout">Sign out</a><button className="secondary-button settings-done" type="button" onClick={onClose}>Done</button></div>
       </section>
     </div>
