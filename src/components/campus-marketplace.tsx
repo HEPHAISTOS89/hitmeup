@@ -278,6 +278,7 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
   const [minimumRating, setMinimumRating] = useState(0);
   const [availabilityWindow, setAvailabilityWindow] = useState<"any" | "now" | "today" | "this-week">("any");
   const [selectedId, setSelectedId] = useState<string | undefined>(dataMode === "preview" ? SERVICES[0]?.id : undefined);
+  const [mapPopupOpen, setMapPopupOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [businessModal, setBusinessModal] = useState<Service | "sponsor" | null>(null);
@@ -671,6 +672,7 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
       return;
     }
     setSelectedId(id);
+    setMapPopupOpen(true);
     setMatchExplanation((current) => current?.serviceId === id ? current : null);
     if (dataMode === "live" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
       void recordProductEvent({ name: "service_viewed", serviceId: id, metadata: { source: serverRecommendations[id] ? "profile" : "discovery", view: "service" } }).catch(() => undefined);
@@ -1097,9 +1099,9 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
             </div>
           </aside>
           <section className="map-stage" aria-label="Campus listings map">
-            {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={selected?.id} recenterKey={recenterKey} onSelect={selectService} popupContent={selected ? <MapListingPopup service={selected} requestDisabled={ratingBlocked} onAction={selected.listingKind === "permanent" ? () => setBusinessModal(selected) : openSelectedRequest} /> : null} />}
+            {surfaceMode === "loading" ? <div className="map-loading" role="status"><span className="map-loading-mark" /><span>Loading approximate campus signals…</span></div> : surfaceMode === "offline" ? <div className="map-fallback" role="alert"><ShieldCheck size={25} /><h2>Listings are unavailable.</h2><p>Your filters are safe. Reconnect and try again; no precise location was requested.</p><button className="secondary-button" type="button" onClick={() => { setSurfaceMode("loading"); setQuery((value) => `${value} `); }}>Try again</button></div> : <CampusMap services={presentedServices} selectedId={mapPopupOpen ? selected?.id : undefined} recenterKey={recenterKey} onSelect={selectService} popupContent={mapPopupOpen && selected ? <MapListingPopup service={selected} requestDisabled={ratingBlocked} onAction={selected.listingKind === "permanent" ? () => setBusinessModal(selected) : openSelectedRequest} /> : null} />}
             <div className={`map-status live-${liveDataConnection}`} aria-live="polite"><span className="live-dot" /> {presentedServices.length} {presentedServices.length === 1 ? "match" : "matches"} · {liveDataConnection === "preview" ? "preview" : liveDataConnection === "online" ? "live" : liveDataConnection === "connecting" ? "connecting" : "reconnecting"}</div>
-            <button className="locate-button" type="button" aria-label="Recenter map" onClick={() => setRecenterKey((value) => value + 1)}><LocateFixed size={17} /><span className="locate-label">Recenter</span></button>
+            <button className="locate-button" type="button" aria-label="Recenter map" onClick={() => { setMapPopupOpen(false); setRecenterKey((value) => value + 1); }}><LocateFixed size={17} /><span className="locate-label">Recenter</span></button>
             {surfaceMode !== "loading" && surfaceMode !== "offline" && !selected && <EmptyState onReset={() => { resetFilters(); setSurfaceMode("default"); }} />}
           </section>
         </section>
