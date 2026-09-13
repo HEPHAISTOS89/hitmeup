@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="560" viewBox="0 0 1400 560" role="img" aria-labelledby="title desc">
+  <title id="title">CrackX presents HitMeUp</title>
+  <desc id="desc">A dark campus map with colorful nearby activity pins and the HitMeUp product tagline.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111114"/>
+      <stop offset="0.56" stop-color="#1a191d"/>
+      <stop offset="1" stop-color="#0b0b0d"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E63E47"/>
+      <stop offset="1" stop-color="#FF7669"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".11"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".035"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#E63E47" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#E63E47" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000" flood-opacity=".45"/>
+    </filter>
+    <filter id="pinShadow" x="-80%" y="-80%" width="260%" height="260%">
+      <feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#000" flood-opacity=".5"/>
+    </filter>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#ffffff" stroke-opacity=".035"/>
+    </pattern>
+  </defs>
+
+  <rect width="1400" height="560" rx="32" fill="url(#bg)"/>
+  <rect width="1400" height="560" rx="32" fill="url(#grid)"/>
+  <circle cx="190" cy="92" r="250" fill="url(#glow)"/>
+  <circle cx="1210" cy="500" r="340" fill="url(#glow)" opacity=".45"/>
+
+  <g transform="translate(76 64)">
+    <g transform="translate(0 2) scale(1.06)">
+      <path d="M28 17.5h-7.2A14.5 14.5 0 0 0 6.3 32a14.5 14.5 0 0 0 14.5 14.5h8.4A10.8 10.8 0 0 0 40 35.7c0-1.6-.35-3.1-1-4.45" fill="none" stroke="#E63E47" stroke-width="7" stroke-linecap="round"/>
+      <path d="M36 46.5h7.2A14.5 14.5 0 0 0 57.7 32a14.5 14.5 0 0 0-14.5-14.5h-8.4A10.8 10.8 0 0 0 24 28.3c0 1.6.35 3.1 1 4.45" fill="none" stroke="#FF7669" stroke-width="7" stroke-linecap="round"/>
+      <path d="m32 26.7 5.3 5.3-5.3 5.3-5.3-5.3 5.3-5.3Z" fill="#f7f3ef"/>
+    </g>
+    <text x="86" y="25" fill="#FF7669" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="800" letter-spacing="4">CRACKX PRESENTS</text>
+    <text x="86" y="57" fill="#A5A1A8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="650" letter-spacing="2.5">THE STUDENT EXCHANGE</text>
+
+    <text x="0" y="190" fill="#F7F3EF" font-family="Georgia, 'Times New Roman', serif" font-size="88" font-weight="700" letter-spacing="-3">HitMeUp</text>
+    <rect x="2" y="213" width="92" height="6" rx="3" fill="url(#brand)"/>
+    <text x="0" y="272" fill="#F7F3EF" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="27" font-weight="650">Find your people. Right here. Right now.</text>
+    <text x="0" y="314" fill="#AAA6AD" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="19">Plans, help, gigs, activities, and trusted places—nearby.</text>
+
+    <g transform="translate(0 366)" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="700">
+      <rect width="114" height="42" rx="21" fill="#E63E47" fill-opacity=".16" stroke="#E63E47" stroke-opacity=".5"/>
+      <text x="26" y="27" fill="#FF8A80">✦ Social</text>
+      <rect x="128" width="126" height="42" rx="21" fill="#ffffff" fill-opacity=".055" stroke="#ffffff" stroke-opacity=".12"/>
+      <text x="151" y="27" fill="#E9E5E2">⌁ Services</text>
+      <rect x="268" width="126" height="42" rx="21" fill="#ffffff" fill-opacity=".055" stroke="#ffffff" stroke-opacity=".12"/>
+      <text x="291" y="27" fill="#E9E5E2">Σ Tutoring</text>
+      <rect x="408" width="122" height="42" rx="21" fill="#A96E22" fill-opacity=".18" stroke="#C58A3B" stroke-opacity=".5"/>
+      <text x="430" y="27" fill="#E2B46E">▣ Business</text>
+    </g>
+
+    <g transform="translate(0 438)" font-family="Inter, ui-sans-serif, system-ui, sans-serif">
+      <circle cx="8" cy="8" r="8" fill="#2DCB85"/>
+      <path d="m4.5 8 2.3 2.3L11.8 5" fill="none" stroke="#0E1713" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="26" y="14" fill="#8E8A91" font-size="14" font-weight="650" letter-spacing=".4">VERIFIED CAMPUS ACCESS · APPROXIMATE BY DEFAULT</text>
+    </g>
+  </g>
+
+  <g transform="translate(770 54)" filter="url(#shadow)">
+    <rect width="560" height="452" rx="28" fill="#121215" stroke="#ffffff" stroke-opacity=".12"/>
+    <rect x="18" y="18" width="524" height="416" rx="20" fill="#0D0E10"/>
+    <rect x="18" y="18" width="524" height="416" rx="20" fill="url(#grid)" opacity=".8"/>
+
+    <g fill="none" stroke="#343238" stroke-width="11" stroke-linecap="round">
+      <path d="M41 350C132 316 150 237 251 239S403 327 522 268"/>
+      <path d="M105 39c2 79 18 133 80 178s104 123 75 201"/>
+      <path d="M307 35c-34 78-10 128 38 169s72 103 87 205"/>
+    </g>
+    <g fill="none" stroke="#59535A" stroke-width="2" stroke-dasharray="5 9" opacity=".72">
+      <path d="M38 132c115 19 165-49 265-14s121 90 220 65"/>
+      <path d="M49 397c86-82 173-58 245-110s137-42 220-4"/>
+    </g>
+
+    <g transform="translate(42 41)">
+      <rect width="154" height="44" rx="14" fill="#1B1B20" stroke="#ffffff" stroke-opacity=".12"/>
+      <circle cx="22" cy="22" r="5" fill="#E63E47"/>
+      <text x="38" y="28" fill="#F7F3EF" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="800" letter-spacing="1.2">11 MATCHES</text>
+    </g>
+
+    <g transform="translate(276 230)" filter="url(#pinShadow)">
+      <circle r="31" fill="#E63E47" stroke="#F7F3EF" stroke-width="4"/>
+      <path d="m-8 -2 7 7L11-9" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g transform="translate(148 314)" filter="url(#pinShadow)">
+      <circle r="23" fill="#416F9D" stroke="#D9E6F1" stroke-width="3"/>
+      <text x="-7" y="7" fill="#fff" font-family="Georgia, serif" font-size="22" font-weight="700">Σ</text>
+    </g>
+    <g transform="translate(420 151)" filter="url(#pinShadow)">
+      <circle r="24" fill="#A96E22" stroke="#F1D6A8" stroke-width="3"/>
+      <path d="M-9-5h18v15H-9zM-12-5 0-14 12-5" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
+    </g>
+    <g transform="translate(480 341)" filter="url(#pinShadow)">
+      <circle r="21" fill="#587C5A" stroke="#D6EAD7" stroke-width="3"/>
+      <path d="M0-10v20M-8-2c4 0 8 4 8 8M8-2C4-2 0 2 0 6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(91 176)" filter="url(#pinShadow)">
+      <circle r="20" fill="#745DA0" stroke="#E3D9F7" stroke-width="3"/>
+      <path d="m-8 3 4-10 4 7 5-11 4 14" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+
+    <g transform="translate(230 278)">
+      <rect width="256" height="84" rx="16" fill="url(#glass)" stroke="#ffffff" stroke-opacity=".15"/>
+      <text x="18" y="28" fill="#FF8A80" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="850" letter-spacing="1.8">HIT ME UP / SOCIAL</text>
+      <text x="18" y="55" fill="#F7F3EF" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="17" font-weight="750">Library break + tacos</text>
+      <text x="18" y="73" fill="#AAA6AD" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12">0.2 mi · tonight · 4 going</text>
+    </g>
+  </g>
+
+  <rect x=".5" y=".5" width="1399" height="559" rx="31.5" fill="none" stroke="#ffffff" stroke-opacity=".1"/>
+</svg>

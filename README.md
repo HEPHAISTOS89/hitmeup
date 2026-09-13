@@ -1,18 +1,17 @@
 <div align="center">
-  <img src="public/brand/logo-mark.svg" alt="HitMeUp logo" width="104" />
+  <img src=".github/assets/readme-hero.svg" alt="CrackX presents HitMeUp — the privacy-first campus exchange" width="100%" />
 
-  # HitMeUp
-
-  **The campus around you, ready when you are.**
-
-  A privacy-first marketplace for spontaneous plans, student help, short gigs,
-  campus activities, and reviewed local businesses.
+  <br />
 
   [![Next.js](https://img.shields.io/badge/Next.js-16-111111?logo=nextdotjs)](https://nextjs.org/)
   [![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev/)
   [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
   [![Tests](https://img.shields.io/badge/tests-140%20passing-20A464)](#verified-locally)
   [![License](https://img.shields.io/badge/license-MIT-E7011F)](LICENSE)
+
+  <br />
+
+  [Overview](#what-hitmeup-does) · [Marketplace](#browse-by-intent) · [Run locally](#run-locally) · [Architecture](#architecture) · [Contributing](CONTRIBUTING.md)
 </div>
 
 ---
