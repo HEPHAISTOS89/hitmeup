@@ -201,11 +201,13 @@ describe("Gemini-assisted campus discovery", () => {
 
     const prompt = screen.getByRole("textbox", { name: "Describe what you need for Gemini" });
     fireEvent.change(prompt, { target: { value: "Calculus help within 2 miles, 4.5+, today" } });
-    fireEvent.click(screen.getByRole("button", { name: /Apply/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Find/i }));
 
     expect(screen.getByRole("status")).toHaveTextContent("Tutoring · Exam prep · within 2 mi · 4.5+ · today");
     expect(screen.getByRole("group", { name: "Tutoring / Academic subcategories" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Search listings" })).toHaveValue("calculus");
+    expect(screen.queryByText("Turn one sentence into map filters.")).not.toBeInTheDocument();
+    expect(screen.queryByText("What Gemini receives")).not.toBeInTheDocument();
   });
 
   it("explains a selected match using an explicit, privacy-labeled action", () => {

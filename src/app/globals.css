@@ -1340,17 +1340,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 :root[data-theme="dark"] .sponsor-disclosure { background: #2b2418; }
 :root[data-theme="dark"] .listing-badge.permanent { color: #efbd70; background: #2b2418; }
 :root[data-theme="dark"] .listing-badge.temporary { color: var(--green); background: #173128; }
-/* Gemini intent translation and explainable matching stay embedded in discovery. */
-.smart-discovery { display: grid; gap: 9px; margin-top: 11px; border: 1px solid #f0cbd0; border-left: 3px solid var(--red); padding: 11px; background: linear-gradient(135deg,#fff 0%,#fff7f8 100%); }
-.smart-discovery-heading { display: grid; grid-template-columns: 30px minmax(0,1fr); align-items: center; gap: 9px; }
-.gemini-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #fff; background: var(--red); box-shadow: 0 5px 14px rgba(231,1,31,.18); }
-.smart-discovery-heading > div { display: grid; gap: 2px; min-width: 0; }
+/* Gemini stays a compact search control instead of a competing explanatory card. */
+.smart-discovery { display: grid; gap: 8px; margin-top: 12px; }
+.smart-discovery-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 2px; }
+.smart-discovery-label { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.gemini-mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: #fff; background: var(--red); }
 .smart-discovery-heading strong { color: var(--ink); font-size: 9.5px; font-weight: 900; }
-.smart-discovery-heading small { color: var(--muted); font-size: 7.5px; line-height: 1.35; }
-.smart-discovery-compose { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px; }
-.smart-discovery-compose input { min-width: 0; height: 38px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 0 10px; color: var(--ink); background: var(--paper); font-size: 8.5px; outline: none; }
-.smart-discovery-compose input:focus { border-color: var(--red); box-shadow: 0 0 0 3px rgba(231,1,31,.09); }
-.smart-discovery-compose button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 68px; min-height: 38px; border: 0; border-radius: 8px; padding: 0 10px; color: #fff; background: var(--red); font-size: 8px; font-weight: 900; cursor: pointer; }
+.smart-preview-label { color: var(--muted); font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.smart-discovery-compose { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px; border: 1px solid var(--line-strong); border-radius: 11px; padding: 4px; background: var(--paper); transition: border-color .18s ease, box-shadow .18s ease; }
+.smart-discovery-compose:focus-within { border-color: var(--red); box-shadow: 0 0 0 3px rgba(231,1,31,.08); }
+.smart-discovery-compose input { min-width: 0; height: 34px; border: 0; padding: 0 8px; color: var(--ink); background: transparent; font-size: 8.5px; outline: none; }
+.smart-discovery-compose input:focus { box-shadow: none; }
+.smart-discovery-compose button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 62px; min-height: 34px; border: 0; border-radius: 8px; padding: 0 10px; color: #fff; background: var(--red); font-size: 8px; font-weight: 900; cursor: pointer; }
 .smart-discovery-compose button:disabled { opacity: .52; cursor: not-allowed; }
 .smart-privacy, .smart-error { display: flex; align-items: flex-start; gap: 5px; margin: 0; color: var(--muted); font-size: 7px; line-height: 1.45; }
 .smart-privacy svg, .smart-error svg { flex: none; }
@@ -1363,6 +1364,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .gemini-data-preview dd { margin: 0; overflow-wrap: anywhere; }
 .gemini-consent { display: flex; align-items: flex-start; gap: 7px; color: var(--muted); font-size: 8px; line-height: 1.45; }
 .gemini-consent input { flex: none; margin-top: 2px; accent-color: var(--red); }
+.gemini-consent-chip { align-items: center; gap: 5px; color: var(--ink); font-size: 7.5px; font-weight: 800; cursor: pointer; }
+.gemini-consent-chip input { margin: 0; }
 .gemini-assistant-consent { display: grid; gap: 8px; }
 .smart-error { color: var(--red-deep); font-weight: 750; }
 .smart-result { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 7px; border-top: 1px solid #f0cbd0; padding-top: 8px; }
@@ -1392,17 +1395,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .solana-story li { display: grid; grid-template-columns: 20px minmax(0,1fr); align-items: center; gap: 5px; min-width: 0; border-top: 1px solid var(--line); padding-top: 7px; }
 .solana-story span { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; background: var(--ink); font-size: 7px; font-weight: 900; }
 .solana-story strong { min-width: 0; color: var(--muted); font-size: 7px; line-height: 1.2; }
-@media (min-width: 701px) and (max-width: 900px) {
-  .discover-frame .smart-discovery { grid-template-columns: minmax(190px,.8fr) minmax(280px,1.2fr); align-items: center; }
-  .discover-frame .smart-result, .discover-frame .smart-privacy, .discover-frame .smart-error { grid-column: 1 / -1; }
-}
 @media (max-width: 700px) {
-  .smart-discovery-heading small, .smart-privacy { font-size: 7.5px; }
   .smart-discovery-compose button { min-width: 54px; }
   .smart-discovery-compose button span { display: none; }
   .solana-story { grid-template-columns: 1fr 1fr; }
 }
-:root[data-theme="dark"] :where(.smart-discovery,.smart-discovery-compose input,.match-explanation,.assistant-review,.assistant-tags span) { color: var(--ink); background: var(--surface); }
-:root[data-theme="dark"] .smart-discovery { border-color: #64323a; }
+:root[data-theme="dark"] :where(.smart-discovery-compose,.match-explanation,.assistant-review,.assistant-tags span) { color: var(--ink); background: var(--surface); }
 :root[data-theme="dark"] .smart-result { border-color: #64323a; }
 :root[data-theme="dark"] .assistant-review.has-risks { background: #2b2418; }
