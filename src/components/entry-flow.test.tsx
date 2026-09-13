@@ -25,11 +25,15 @@ describe("authenticated onboarding", () => {
   afterEach(() => vi.restoreAllMocks());
   afterEach(cleanup);
 
-  it("keeps the verified Microsoft route and privacy proofs in the redesigned login", () => {
+  it("matches Laura's remote login while keeping the verified Microsoft route", () => {
     render(<EntryFlow initialEntry="login" onComplete={vi.fn()} />);
     expect(screen.getByRole("link", { name: /Continue with Microsoft/ })).toHaveAttribute("href", "/auth/login?returnTo=/app");
-    expect(screen.getByText("University sign-in gates the network.")).toBeInTheDocument();
-    expect(screen.getByText("Exact sharing is voluntary and service-scoped.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Students helping students." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Welcome back." })).toBeInTheDocument();
+    expect(screen.getByText("Verify with your university account.")).toBeInTheDocument();
+    expect(screen.queryByText("People nearby.")).not.toBeInTheDocument();
+    expect(screen.queryByText("PRIVATE CAMPUS EXCHANGE")).not.toBeInTheDocument();
+    expect(screen.queryByText("Student exchange")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "CC BY-SA 4.0" })).toHaveAttribute("href", "https://creativecommons.org/licenses/by-sa/4.0/");
   });
 

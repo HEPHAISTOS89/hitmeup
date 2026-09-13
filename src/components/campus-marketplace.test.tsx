@@ -18,7 +18,7 @@ vi.mock("./theme-toggle", () => ({
   ThemeToggle: () => <button type="button">Theme</button>,
 }));
 
-import { CampusMarketplace, chatScrollBehavior } from "./campus-marketplace";
+import { CampusMarketplace, CreateServiceModal, chatScrollBehavior } from "./campus-marketplace";
 
 afterEach(cleanup);
 
@@ -171,6 +171,52 @@ describe("Gemini-assisted campus discovery", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Suggest" }));
     expect(screen.getByRole("region", { name: "Writing assistant review" })).toHaveTextContent("Structured and ready to review");
     expect(screen.getByRole("region", { name: "Writing assistant review" })).toHaveTextContent("calculus");
+  });
+});
+
+describe("temporary listing submission feedback", () => {
+  const validDraft = {
+    title: "Demo calculus walkthrough",
+    category: "Tutoring" as const,
+    subcategory: "Exam prep",
+    availability: "Today · 30 minutes",
+    description: "A focused review of integration techniques before the exam.",
+    price: "Free demo",
+  };
+
+  function renderCreateModal({ submitError = "", submitting = false } = {}) {
+    return render(
+      <CreateServiceModal
+        draft={validDraft}
+        setDraft={vi.fn()}
+        reviewed
+        setReviewed={vi.fn()}
+        assistantBusy={false}
+        assistantError=""
+        assistantDetails={null}
+        submitError={submitError}
+        submitting={submitting}
+        onAssistant={vi.fn()}
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+  }
+
+  it("keeps a geolocation failure visible inside the active dialog", () => {
+    renderCreateModal({ submitError: "Allow location once to publish an approximate campus pin." });
+
+    const dialog = screen.getByRole("dialog", { name: "Make one useful thing findable." });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Allow location once");
+    expect(within(dialog).getByRole("button", { name: /Publish offer/i })).toBeEnabled();
+  });
+
+  it("prevents duplicate submissions while a listing is publishing", () => {
+    renderCreateModal({ submitting: true });
+
+    const dialog = screen.getByRole("dialog", { name: "Make one useful thing findable." });
+    expect(within(dialog).getByRole("button", { name: /Publishing/i })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
   });
 });
 

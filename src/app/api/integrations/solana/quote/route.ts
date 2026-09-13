@@ -7,6 +7,26 @@ import { assertSameOriginMutation } from "@/lib/security";
 import { createServerSupabaseAdminClient, SupabaseConfigurationError } from "@/lib/supabase/factory";
 import { getSolanaProductState, hasPaidCosmeticOwnership, reserveCosmeticQuote } from "@/lib/supabase/repository";
 
+export function solanaQuoteFailureResponse(error: unknown) {
+  if (error instanceof Error && error.message === "purchase already in progress") {
+    return NextResponse.json(
+      {
+        error: "A Devnet checkout is already active for this account. Continue in the original tab or try again after the quote expires.",
+        code: "checkout_in_progress",
+      },
+      { status: 409 },
+    );
+  }
+
+  console.error(JSON.stringify({
+    level: "error",
+    message: "solana_quote_failed",
+    errorName: error instanceof Error ? error.name : "UnknownError",
+    errorMessage: error instanceof Error ? error.message : "Unknown failure",
+  }));
+  return integrationErrorResponse(error);
+}
+
 export async function POST(request: Request) {
   try {
     assertSameOriginMutation(request);
@@ -36,6 +56,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ...quote, checkoutId });
   } catch (error) {
     if (error instanceof SupabaseConfigurationError) return NextResponse.json({ error: "Cosmetic quotes are not configured.", code: "configuration" }, { status: 503 });
-    return integrationErrorResponse(error);
+    return solanaQuoteFailureResponse(error);
   }
 }

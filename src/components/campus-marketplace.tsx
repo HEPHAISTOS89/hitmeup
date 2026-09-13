@@ -27,9 +27,9 @@ import {
   type SetStateAction,
 } from "react";
 import { CampusMap } from "./campus-map";
-import { AvatarStudio } from "./avatar-studio";
 import { EntryFlow, type EntryState } from "./entry-flow";
 import { HitMeUpLogo } from "./hitmeup-logo";
+import { ProfileAvatarLink, ProfileAvatarPicture } from "./profile-avatar-link";
 import { ThemeToggle } from "./theme-toggle";
 import { CAMPUS_CENTER, SERVICES } from "@/lib/service-catalog";
 import {
@@ -158,10 +158,6 @@ type SurfaceMode = "default" | "loading" | "offline";
 type ChatConnection = "preview" | "connecting" | "online" | "reconnecting";
 type LiveDataConnection = "preview" | "connecting" | "online" | "reconnecting";
 type ListingFilter = ListingKind | "all";
-
-function profileInitials(profile: ProfileProjection | null) {
-  return profile?.displayName?.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "ST";
-}
 
 function notificationCopy(notification: NotificationProjection) {
   if (notification.payload && typeof notification.payload === "object") {
@@ -1036,7 +1032,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
           {dataMode === "preview" && <span className="session-chip is-preview">Preview data</span>}
           <ThemeToggle />
           <button className="icon-button" type="button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={notificationsOpen} onClick={toggleNotifications}><Bell size={19} />{unreadCount > 0 && <span className="notification-dot" />}</button>
-          <button className="avatar" type="button" aria-label="Open profile" onClick={() => setView("profile")}>{profileInitials(profile)}</button>
+          <button className="avatar" type="button" aria-label="Open profile" onClick={() => setView("profile")}><ProfileAvatarPicture profile={profile} /></button>
         </div>
         {notificationsOpen && <aside className="notification-popover" aria-label="Notifications"><div className="popover-heading"><span>Notifications <small className={`live-data-label live-${liveDataConnection}`}><i />{liveDataConnection === "preview" ? "Preview" : liveDataConnection === "online" ? "Live" : liveDataConnection === "connecting" ? "Connecting" : "Reconnecting"}</small></span><button type="button" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><X size={15} /></button></div>{notificationsStatus === "loading" ? <p role="status"><LoaderCircle className="spin" size={16} /> Loading notifications…</p> : notificationsStatus === "error" ? <p className="notification-error" role="alert"><TriangleAlert size={16} /> Notifications could not be loaded. <button type="button" onClick={retryNotifications}>Try again</button></p> : notifications.length ? notifications.slice(0, 3).map((item) => <p key={item.id}><Bell size={16} /> {notificationCopy(item)}</p>) : <p><Bell size={16} /> You&apos;re all caught up. Request updates will appear here.</p>}<button className="text-button" type="button" onClick={() => { setNotificationsOpen(false); setView("requests"); }}>Open requests <ChevronRight size={15} /></button></aside>}
       </header>
@@ -1081,7 +1077,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
             <div className="filter-controls"><label><span>Within</span><select value={maxDistanceMiles} onChange={(event) => { setMaxDistanceMiles(Number(event.target.value)); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "distance", source: "discovery", view: "discover" } }).catch(() => undefined); }}>{![1, 2, 3, 5, 10].includes(maxDistanceMiles) && <option value={maxDistanceMiles}>{maxDistanceMiles} miles</option>}<option value={1}>1 mile</option><option value={2}>2 miles</option><option value={3}>3 miles</option><option value={5}>5 miles</option><option value={10}>10 miles</option></select></label><label><span>Rating</span><select value={minimumRating} onChange={(event) => { setMinimumRating(Number(event.target.value)); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "rating", source: "discovery", view: "discover" } }).catch(() => undefined); }}>{![0, 4, 4.5, 4.8].includes(minimumRating) && <option value={minimumRating}>{minimumRating}+ stars</option>}<option value={0}>Any rating</option><option value={4}>4.0+ stars</option><option value={4.5}>4.5+ stars</option><option value={4.8}>4.8+ stars</option></select></label><label><span>When</span><select value={availabilityWindow} onChange={(event) => { setAvailabilityWindow(event.target.value as "any" | "now" | "today" | "this-week"); if (dataMode === "live") void recordProductEvent({ name: "filter_applied", metadata: { filter: "availability", source: "discovery", view: "discover" } }).catch(() => undefined); }}><option value="any">Any time</option><option value="now">Available now</option><option value="today">Today</option><option value="this-week">This week</option></select></label></div>
             <div className="privacy-note"><ShieldCheck size={19} /><div><strong>People stay approximate</strong><p>Exact meeting points unlock only after acceptance and mutual sharing.</p></div></div>
             <div className="create-actions">
-              <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => ratingBlocked ? openActiveRequest() : setCreateOpen(true)}><Plus size={17} /> {ratingBlocked ? "Rate before posting" : "Post something temporary"}</button>
+              <button className="offer-button" type="button" disabled={ratingBlocked} onClick={() => { if (ratingBlocked) openActiveRequest(); else { setDataError(""); setCreateOpen(true); } }}><Plus size={17} /> {ratingBlocked ? "Rate before posting" : "Post something temporary"}</button>
               <button className="business-button" type="button" onClick={() => setBusinessModal("sponsor")}><Store size={17} /><span><strong>List a business</strong><small>Permanent sponsored pin</small></span><ChevronRight size={16} /></button>
             </div>
             <div className="nearby-list" aria-label="Nearby listings">
@@ -1103,7 +1099,7 @@ function MarketplaceShell({ dataMode }: { dataMode: DataMode }) {
       {view === "profile" && <ProfileView profile={profile} profileStatus={profileStatus} requests={requests} reviews={reviews} reviewsStatus={reviewsStatus} cosmeticCatalog={cosmeticCatalog} cosmeticsStatus={cosmeticsStatus} previewMode={dataMode === "preview"} onProfileChange={setProfile} onCatalogChange={setCosmeticCatalog} onResetPreview={() => setProfile({ ...PREVIEW_PROFILE, interests: [...PREVIEW_PROFILE.interests] })} onBack={() => setView("discover")} onSettings={() => setSettingsOpen(true)} />}
       <footer className="trust-strip"><span><BadgeCheck size={16} /> Student email required</span><span><LockKeyhole size={16} /> Mutual location consent</span><span><CircleDollarSign size={16} /> Pay face-to-face</span></footer>
       {requestOpen && drawerService && <RequestDrawer key={activeRequestId ?? drawerService.id} selected={drawerService} stage={stage} role={currentRequest?.role ?? "requester"} setStage={transition} onBeginRequest={beginRequest} onAcceptRequest={acceptRequest} onRejectRequest={rejectRequest} onCancelRequest={cancelRequest} onStartMeeting={startMeeting} onCompleteService={completeService} onSubmitRating={rateService} actionBusy={actionBusy} requesterShared={requesterShared} setRequesterShared={setMyLocation} providerShared={providerShared} requesterCompleted={requesterCompleted} providerCompleted={providerCompleted} requesterRating={requesterRating} setRequesterRating={setRequesterRating} ratingComment={ratingComment} setRatingComment={setRatingComment} otherRatingSubmitted={otherRatingSubmitted} ratingSubmitted={dataMode === "live" && Boolean(currentRequest?.ratings.mine)} exactLocationVisible={exactLocationVisible} directionsUrl={directionsUrl} messages={messages} messagesLoading={messagesLoading} chatError={chatError} chatConnection={chatConnection} onRetryMessages={retryMessages} message={message} setMessage={setMessage} sendMessage={sendMessage} onClose={() => setRequestOpen(false)} closeRef={drawerCloseRef} />}
-      {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} assistantDetails={assistantDetails} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
+      {createOpen && <CreateServiceModal draft={serviceDraft} setDraft={setServiceDraft} reviewed={draftReviewed} setReviewed={setDraftReviewed} assistantBusy={assistantBusy} assistantSource={assistantSource} assistantError={assistantError} assistantDetails={assistantDetails} submitError={dataError} submitting={actionBusy} onAssistant={useWritingAssistant} onSubmit={publishService} onClose={() => setCreateOpen(false)} />}
       {businessModal && <BusinessPinModal service={businessModal === "sponsor" ? undefined : businessModal} onClose={() => setBusinessModal(null)} />}
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </main>
@@ -1238,7 +1234,7 @@ function formatProfileDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-export function ProfileView({ profile, profileStatus = "ready", requests, reviews, reviewsStatus, cosmeticCatalog, cosmeticsStatus, previewMode, onProfileChange, onCatalogChange, onResetPreview, onBack, onSettings }: { profile: ProfileProjection | null; profileStatus?: "loading" | "ready" | "error"; requests: ServiceRequestSummary[]; reviews: ProfileReview[]; reviewsStatus: "loading" | "ready" | "error"; cosmeticCatalog: CosmeticProjection[]; cosmeticsStatus: "loading" | "ready" | "error"; previewMode: boolean; onProfileChange: (profile: ProfileProjection | null) => void; onCatalogChange: (catalog: CosmeticProjection[]) => void; onResetPreview: () => void; onBack: () => void; onSettings: () => void }) {
+export function ProfileView({ profile, profileStatus = "ready", requests, reviews, reviewsStatus, previewMode, onProfileChange, onBack, onSettings }: { profile: ProfileProjection | null; profileStatus?: "loading" | "ready" | "error"; requests: ServiceRequestSummary[]; reviews: ProfileReview[]; reviewsStatus: "loading" | "ready" | "error"; cosmeticCatalog: CosmeticProjection[]; cosmeticsStatus: "loading" | "ready" | "error"; previewMode: boolean; onProfileChange: (profile: ProfileProjection | null) => void; onCatalogChange: (catalog: CosmeticProjection[]) => void; onResetPreview: () => void; onBack: () => void; onSettings: () => void }) {
   const displayName = profile?.displayName || "Your profile";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ displayName: "", bio: "", interests: "" });
@@ -1287,10 +1283,8 @@ export function ProfileView({ profile, profileStatus = "ready", requests, review
     <section className="secondary-view profile-view">
       <div className="secondary-inner wide-inner">
         <button className="back-button" type="button" onClick={onBack}><ArrowLeft size={16} /> Discover</button>
-        {previewMode && <div className="profile-preview-notice" role="status"><Sparkles size={15} /><span><strong>Local profile preview</strong> Sample activity and reviews are not live. Profile edits stay in memory and reset on reload.</span><button type="button" onClick={() => { cancelEdit(); onResetPreview(); }}>Reset sample</button></div>}
-
         <div className="profile-heading profile-identity-heading">
-          <div className="profile-avatar abstract-avatar avatar-tone-signal" aria-label="HitMeUp profile avatar"><HitMeUpLogo size={42} /></div>
+          <ProfileAvatarLink profile={profile} previewMode={previewMode} />
           <div className="profile-title-block"><p className="eyebrow">YOUR PROFILE</p><div className="profile-name-line"><h1>{displayName}</h1>{profile && <span className="verified-profile-badge"><BadgeCheck size={14} /> University verified</span>}</div><p className="secondary-lede">{profileStatus === "loading" ? "Loading your verified profile…" : profileStatus === "error" ? "Your profile could not be loaded." : profile?.eduDomain ? `Verified through ${profile.eduDomain}` : "Your profile is ready to customize."}</p></div>
           <div className="profile-heading-actions"><button className="secondary-button" type="button" disabled={!profile || profileStatus !== "ready"} onClick={beginEdit}><Pencil size={15} /> Edit profile</button><button className="secondary-button" type="button" onClick={onSettings}><Settings2 size={15} /> Privacy & safety</button></div>
         </div>
@@ -1315,7 +1309,7 @@ export function ProfileView({ profile, profileStatus = "ready", requests, review
         {saveStatus === "saved" && <p className="profile-save-status" role="status">{previewMode ? "Updated in this local preview only." : "Profile updated."}</p>}
         {saveStatus === "error" && <p className="profile-save-status is-error" role="alert">The profile could not be saved. Your previous details are unchanged.</p>}
 
-        <div className="profile-experience-grid">
+        <div className="profile-experience-grid" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
           <div className="profile-main-column">
             <section className="profile-card profile-about">
               <div className="section-heading"><div><span className="section-kicker">ABOUT</span><h2>A little context.</h2></div></div>
@@ -1337,11 +1331,6 @@ export function ProfileView({ profile, profileStatus = "ready", requests, review
             </section>
           </div>
 
-          <aside className="profile-side-column"><section className="profile-card profile-boundary-card"><ShieldCheck size={22} /><span className="section-kicker">PROFILE BOUNDARY</span><h2>Useful, not revealing.</h2><p>Only your chosen name, About text, interests, aggregate reputation, and participant-scoped history are used here. Payment details and meetup locations stay in private conversations.</p><button className="text-button" type="button" onClick={onSettings}>Review privacy & safety <ChevronRight size={15} /></button></section></aside>
-        </div>
-
-        <div className="profile-avatar-section">
-          <AvatarStudio profile={profile} catalog={cosmeticCatalog} catalogStatus={cosmeticsStatus} previewMode={previewMode} onProfileChange={onProfileChange} onCatalogChange={onCatalogChange} />
         </div>
       </div>
     </section>
@@ -1520,7 +1509,7 @@ function assistantRiskCopy(flag: string) {
   return copy[flag] ?? flag.replaceAll("-", " ");
 }
 
-function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantBusy, assistantSource, assistantError, assistantDetails, onAssistant, onSubmit, onClose }: { draft: ServiceDraft; setDraft: Dispatch<SetStateAction<ServiceDraft>>; reviewed: boolean; setReviewed: (value: boolean) => void; assistantBusy: boolean; assistantSource?: "gemini" | "deterministic-fallback" | "template"; assistantError: string; assistantDetails: { explanation: string; tags: string[]; riskFlags: string[]; priceNote: string; availabilityNote: string } | null; onAssistant: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onClose: () => void }) {
+export function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantBusy, assistantSource, assistantError, assistantDetails, submitError, submitting, onAssistant, onSubmit, onClose }: { draft: ServiceDraft; setDraft: Dispatch<SetStateAction<ServiceDraft>>; reviewed: boolean; setReviewed: (value: boolean) => void; assistantBusy: boolean; assistantSource?: "gemini" | "deterministic-fallback" | "template"; assistantError: string; assistantDetails: { explanation: string; tags: string[]; riskFlags: string[]; priceNote: string; availabilityNote: string } | null; submitError: string; submitting: boolean; onAssistant: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onClose: () => void }) {
   const [attempted, setAttempted] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const dirty = Object.values(draft).some(Boolean);
@@ -1552,10 +1541,11 @@ function CreateServiceModal({ draft, setDraft, reviewed, setReviewed, assistantB
             <ul><li>{assistantDetails.priceNote}</li><li>{assistantDetails.availabilityNote}</li>{assistantDetails.riskFlags.map((flag) => <li className="assistant-risk" key={flag}>{assistantRiskCopy(flag)}</li>)}</ul>
           </section>}
           {assistantError && <p className="form-error" role="alert">{assistantError}</p>}
+          {submitError && <p className="form-error" role="alert">{submitError}</p>}
           <label className="review-check"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed the title, scope and availability.</span></label>
           {attempted && !reviewed && <p className="form-error" role="alert">Review and confirm the offer before publishing.</p>}
           {confirmDiscard && <div className="discard-confirm" role="alert"><span>Discard this draft?</span><button type="button" onClick={onClose}>Discard</button><button type="button" onClick={() => setConfirmDiscard(false)}>Keep editing</button></div>}
-          <div className="modal-actions"><button className="secondary-button" type="button" onClick={requestClose}>Cancel</button><button className="primary-action" type="submit" disabled={!valid}>Publish offer <Plus size={16} /></button></div>
+          <div className="modal-actions"><button className="secondary-button" type="button" disabled={submitting} onClick={requestClose}>Cancel</button><button className="primary-action" type="submit" disabled={!valid || submitting}>{submitting ? "Publishing…" : "Publish offer"} <Plus size={16} /></button></div>
         </form>
       </section>
     </div>

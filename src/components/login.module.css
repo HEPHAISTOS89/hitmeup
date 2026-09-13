@@ -1,63 +1,53 @@
 .screen {
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(420px, .92fr);
-  color: #171719;
+  grid-template-columns: 1fr 1fr;
   background: #fcfaf9;
-  font-family: var(--font-body), "Avenir Next", "Segoe UI", sans-serif;
+  color: #171719;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
 }
-
 .campus {
   position: relative;
   min-height: 100dvh;
-  background:
-    linear-gradient(180deg, rgba(255,249,241,.95), rgba(255,249,241,.72) 34%, rgba(17,19,22,.12) 68%, rgba(17,19,22,.7)),
-    url("/brand/texas-tech-campus.jpg") center center / cover;
+  background: linear-gradient(180deg, rgba(255,249,241,.94), rgba(255,249,241,.65) 24%, transparent 49%, rgba(17,19,22,.56)), url('/brand/texas-tech-campus.jpg') center center / cover;
 }
-
 .campusHeading { position: relative; padding: clamp(48px, 7vh, 80px) clamp(32px, 5vw, 76px); }
-.campusHeading > p, .eyebrow { margin: 0 0 24px; color: #373438; font-size: 11px; font-weight: 850; letter-spacing: .18em; text-transform: uppercase; }
-.campusHeading h1 { max-width: 700px; margin: 0; color: #202024; font: 600 clamp(48px, 5.2vw, 78px)/1.02 var(--font-display), Georgia, serif; letter-spacing: -.045em; }
+.campusHeading p { margin: 0 0 30px; color: #373438; font-size: 10px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+.campusHeading h1 { margin: 0; color: #202024; font-family: "Helvetica Neue", Arial, sans-serif; font-size: clamp(48px, 5.3vw, 78px); font-weight: 600; line-height: 1.02; letter-spacing: -.055em; }
 .campusHeading h1 span { display: block; }
 .campusHeading h1 .accent { color: #ce0025; }
-.proofList { display: grid; gap: 10px; width: min(530px, 100%); margin-top: 34px; border: 1px solid rgba(255,255,255,.5); border-radius: 14px; padding: 16px; background: rgba(255,249,241,.78); box-shadow: 0 10px 30px rgba(17,19,22,.08); backdrop-filter: blur(9px); }
-.proofList span { display: flex; align-items: center; gap: 9px; color: #302d2f; font-size: 13px; font-weight: 700; }
-.proofList svg { flex: none; color: #ce0025; }
-.photoCredit { position: absolute; right: 24px; bottom: 20px; left: 24px; color: #fff; font-size: 11px; line-height: 1.6; }
+.photoCredit { position: absolute; bottom: 20px; left: 24px; right: 24px; color: #fff; font-size: 10px; line-height: 1.6; }
 .photoCredit a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
-
 .signIn { position: relative; display: grid; place-items: center; overflow: hidden; padding: clamp(24px, 4vw, 64px); isolation: isolate; }
 .signIn::before, .signIn::after { content: ""; position: absolute; z-index: -1; width: 360px; height: 640px; border-radius: 48%; background: #f8edef; transform: rotate(-36deg); }
 .signIn::before { top: -280px; left: -150px; }
-.signIn::after { right: -140px; bottom: -330px; }
-.card { width: 100%; max-width: 560px; padding: clamp(36px, 5vw, 70px) clamp(24px, 3vw, 48px); border: 1px solid #eee9e8; border-radius: 28px; background: rgba(255,255,255,.94); box-shadow: 0 24px 70px rgba(55,28,32,.05); text-align: center; }
-.brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 31px; }
-.brand strong { font: 600 24px/1 var(--font-display), Georgia, serif; letter-spacing: -.035em; }
-.brand span { color: #77767e; font-size: 10px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
-.eyebrow { margin-bottom: 12px; color: #ce0025; }
-.card h2 { margin: 0; font: 600 clamp(30px, 2.7vw, 40px)/1.15 var(--font-display), Georgia, serif; letter-spacing: -.035em; }
-.subtitle { margin: 14px auto 0; max-width: 440px; color: #68676e; font-size: 15px; line-height: 1.55; }
-.actions { margin-top: 32px; }
-.microsoftButton { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 58px; padding: 12px 18px; border: 1px solid #dedbdd; border-radius: 12px; color: #171719; background: #fff; box-shadow: 0 3px 10px rgba(23,23,25,.035); font-size: 15px; font-weight: 750; text-decoration: none; transition: border-color .2s, box-shadow .2s, transform .2s; }
+.signIn::after { bottom: -330px; right: -140px; }
+.card { width: 100%; max-width: 560px; padding: clamp(36px, 5vw, 72px) clamp(24px, 3vw, 48px); border: 1px solid #eee9e8; border-radius: 32px; background: rgba(255,255,255,.93); box-shadow: 0 24px 70px rgba(55,28,32,.035); text-align: center; }
+.brand { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 36px; }
+.brand strong { font-size: 20px; letter-spacing: -.05em; }
+.card h2 { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; font-size: clamp(28px, 2.6vw, 38px); font-weight: 600; line-height: 1.15; letter-spacing: -.04em; }
+.subtitle { color: #77767e; margin: 14px 0 0; font-size: 15px; line-height: 1.5; }
+.actions { margin-top: 38px; }
+.microsoftButton { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 62px; padding: 14px 18px; border: 1px solid #e4e2e3; border-radius: 14px; background: #fff; color: #171719; font-size: 15px; font-weight: 600; text-decoration: none; box-shadow: 0 3px 10px #17171904; transition: border-color .2s, box-shadow .2s; }
 .microsoftButton > svg { margin-left: auto; flex-shrink: 0; }
-.microsoftButton:hover { border-color: #ce0025; box-shadow: 0 7px 20px rgba(206,0,37,.08); transform: translateY(-1px); }
-.footnote { margin: 18px 0 0; color: #77767e; font-size: 12px; line-height: 1.55; }
-.microsoftButton:focus-visible, .photoCredit a:focus-visible { outline: 3px solid #ce0025; outline-offset: 5px; }
-
-@media (prefers-reduced-motion: reduce) { .microsoftButton { transition: none; } }
-
+.microsoftButton:hover { border-color: #d50022; box-shadow: 0 4px 16px #d500220a; }
+.microsoftButton:focus-visible, .photoCredit a:focus-visible { outline: 3px solid #d50022; outline-offset: 5px; }
 @media (max-width: 760px) {
   .screen { grid-template-columns: 1fr; }
-  .campus { min-height: 390px; background-position: center 36%; }
-  .campusHeading { padding: 32px 28px 76px; }
-  .campusHeading h1 { font-size: clamp(40px, 11vw, 56px); }
-  .proofList { gap: 8px; margin-top: 24px; }
-  .proofList span { font-size: 12px; }
+  .campus { min-height: 360px; background-position: center 36%; }
+  .campusHeading { padding: 32px 28px 64px; }
+  .campusHeading h1 { font-size: clamp(42px, 10vw, 56px); }
+  .campusHeading p { margin-bottom: 22px; }
+  .campusHeading p { font-size: 10px; }
   .photoCredit { bottom: 12px; font-size: 9px; }
   .signIn { padding: 24px 18px; }
-  .card { padding: 32px 24px; border-radius: 22px; }
-  .brand { margin-bottom: 25px; }
+  .card { padding: 32px 24px; border-radius: 24px; }
+  .brand { margin-bottom: 26px; gap: 8px; }
   .brand svg { width: 64px; height: 64px; }
-  .actions { margin-top: 27px; }
+  .actions { margin-top: 28px; }
   .microsoftButton { font-size: 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .microsoftButton { transition: none; }
 }

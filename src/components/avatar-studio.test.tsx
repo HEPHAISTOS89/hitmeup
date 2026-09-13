@@ -8,7 +8,6 @@ import type { AvatarMarketplaceProjection, CosmeticProjection, ProfileProjection
 import avatarManifest from "../../public/avatar/laura/manifest.json";
 
 const api = vi.hoisted(() => ({
-  equipCosmetic: vi.fn(),
   getAvatarMarketplace: vi.fn(),
   getCosmeticQuote: vi.fn(),
   getCosmetics: vi.fn(),
@@ -65,7 +64,7 @@ const marketplace: AvatarMarketplaceProjection[] = AVATAR_MARKETPLACE_CATALOG.ma
   assetStatus: item.assetStatus,
 }));
 
-const rewards: RewardSummary = { balance: 120, lifetimeEarned: 120, lifetimeSpent: 0, unlockedSkus: [] };
+const rewards: RewardSummary = { balance: 120, lifetimeEarned: 170, lifetimeSpent: 50, unlockedSkus: [] };
 
 function renderStudio(overrides: Partial<React.ComponentProps<typeof AvatarStudio>> = {}) {
   const onProfileChange = vi.fn();
@@ -74,54 +73,53 @@ function renderStudio(overrides: Partial<React.ComponentProps<typeof AvatarStudi
   return { onProfileChange, onCatalogChange };
 }
 
-function openClassicEditor() {
-  fireEvent.click(screen.getByText("Classic vector avatar"));
+async function openTab(name: "Identity" | "Outfits" | "Face" | "Extras" | "Backdrop") {
+  fireEvent.click(await screen.findByRole("tab", { name }));
+  return screen.getByRole("tabpanel", { name });
 }
 
-describe("Avatar Studio commerce boundaries", () => {
+describe("Laura avatar studio with backend boundaries", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.updateProfile.mockResolvedValue({ updated: true });
     api.getAvatarMarketplace.mockResolvedValue(marketplace);
     api.getRewards.mockResolvedValue(rewards);
     api.setAvatarMarketplaceItem.mockResolvedValue({ sku: "avatar.top.male.utility-overshirt", equipped: true });
-    api.unlockWithRewardPoints.mockResolvedValue({ unlocked: "reward-frame-mint", rewards: { ...rewards, balance: 80, lifetimeSpent: 40, unlockedSkus: ["reward-frame-mint"] } });
+    api.unlockWithRewardPoints.mockResolvedValue({ unlocked: "reward-frame-mint", rewards: { ...rewards, balance: 80, lifetimeSpent: 90, unlockedSkus: ["reward-frame-mint"] } });
     api.getCosmetics.mockResolvedValue(catalog);
     api.getCosmeticQuote.mockResolvedValue({ network: "devnet", productId: "profile-frame", label: "Profile frame", lamports: 10_000_000, treasury: "Treasury111", checkoutId: "00000000-0000-4000-8000-000000000001" });
   });
 
-  it("saves only the six server-supported classic avatar fields", async () => {
+  it("integrates inclusive identity choices into Laura's main editor and saves the existing six-field backend contract", async () => {
     const { onProfileChange } = renderStudio();
-    openClassicEditor();
-    fireEvent.click(screen.getByRole("tab", { name: "Classic style" }));
-    fireEvent.click(screen.getByRole("button", { name: "Tech jacket" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save look" }));
+    const identity = await openTab("Identity");
+    expect(within(identity).getByText("Identity is always included.")).toBeInTheDocument();
+    fireEvent.click(within(identity).getByRole("button", { name: "Ebony" }));
+    fireEvent.click(within(identity).getByRole("button", { name: "Locs" }));
+    fireEvent.click(within(identity).getByRole("button", { name: "Violet" }));
+    fireEvent.click(within(identity).getByRole("button", { name: "Save identity" }));
 
     await waitFor(() => expect(api.updateProfile).toHaveBeenCalledWith({ avatarConfig: {
-      skin: "golden", face: "smile", hair: "curls", hairColor: "ink", outfit: "tech", accessory: "none",
+      skin: "ebony", face: "smile", hair: "locs", hairColor: "violet", outfit: "hoodie", accessory: "none",
     } }));
-    expect(onProfileChange).toHaveBeenCalledWith(expect.objectContaining({ avatarConfig: expect.objectContaining({ outfit: "tech" }) }));
+    expect(onProfileChange).toHaveBeenCalledWith(expect.objectContaining({ avatarConfig: expect.objectContaining({ skin: "ebony", hair: "locs", hairColor: "violet" }) }));
+    expect(screen.getByRole("img", { name: /Ebony skin tone and Locs hair/ })).toBeInTheDocument();
   });
 
-  it("uses accessible keyboard tab patterns in both editors", async () => {
+  it("uses one accessible keyboard tab pattern and removes the duplicated classic editor", async () => {
     renderStudio();
-    const outfits = await screen.findByRole("tab", { name: "Outfits" });
-    fireEvent.keyDown(outfits, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "Face" })).toHaveAttribute("aria-selected", "true");
+    const identity = await screen.findByRole("tab", { name: "Identity" });
+    fireEvent.keyDown(identity, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "Outfits" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Outfits" }), { key: "ArrowRight" });
     expect(screen.getByRole("tabpanel", { name: "Face" })).toHaveAttribute("aria-labelledby", "laura-avatar-tab-expressions");
-
-    openClassicEditor();
-    const character = screen.getByRole("tab", { name: "Classic face" });
-    fireEvent.keyDown(character, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "Classic style" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByText("Classic vector avatar")).not.toBeInTheDocument();
+    expect(screen.queryByText("Profile frame")).not.toBeInTheDocument();
+    expect(screen.queryByText("Campus theme")).not.toBeInTheDocument();
   });
 
-  it("ships a production-safe original vector pack for every customization choice", () => {
-    expect(avatarManifest.source).toMatchObject({
-      creator: "HitMeUp",
-      licenseStatus: "approved",
-      thirdPartyImageInputs: false,
-    });
+  it("ships a production-safe original vector pack for every Laura customization choice", () => {
+    expect(avatarManifest.source).toMatchObject({ creator: "HitMeUp", licenseStatus: "approved", thirdPartyImageInputs: false });
     expect(avatarManifest.characters).toHaveLength(54);
     expect(avatarManifest.accessories).toHaveLength(15);
     expect(avatarManifest.backgrounds).toHaveLength(12);
@@ -129,72 +127,64 @@ describe("Avatar Studio commerce boundaries", () => {
     expect(JSON.stringify(avatarManifest)).not.toContain(".webp");
   });
 
-  it("renders all 12 backdrops and respects a backend review gate", async () => {
-    const reviewGatedMarketplace = marketplace.map((item) => ({
-      ...item,
-      assetStatus: item.sku === "avatar.background.burst" ? "placeholder" as const : "approved" as const,
-    }));
+  it("renders all 12 backdrops and respects the backend review gate", async () => {
+    const reviewGatedMarketplace = marketplace.map((item) => ({ ...item, assetStatus: item.sku === "avatar.background.burst" ? "placeholder" as const : "approved" as const }));
     api.getAvatarMarketplace.mockResolvedValue(reviewGatedMarketplace);
     renderStudio();
-    fireEvent.click(await screen.findByRole("tab", { name: "Backdrop" }));
+    const panel = await openTab("Backdrop");
 
     expect(screen.getByText("Server review gate")).toBeInTheDocument();
     expect(screen.getByText("Graphic backgrounds").parentElement).toHaveTextContent("6 styles");
-    const panel = screen.getByRole("tabpanel", { name: "Backdrop" });
     expect(within(panel).getAllByRole("button")).toHaveLength(12);
     fireEvent.click(within(panel).getByRole("button", { name: "Noise burst, 0.05 SOL Devnet · preview only" }));
     expect(screen.getByText("PREVIEW IS NOT OWNERSHIP")).toBeInTheDocument();
     expect(api.setAvatarMarketplaceItem).not.toHaveBeenCalled();
-    expect(api.updateProfile).not.toHaveBeenCalled();
   });
 
-  it("does not expose legacy checkout for unknown catalog SKUs", async () => {
-    renderStudio({ catalog: [...catalog, { sku: "unknown-premium-top", label: "Premium top", lamports: 8_000_000, owned: false, equipped: false, network: "devnet" }] });
-    openClassicEditor();
-
-    expect(screen.queryByText("Premium top")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Unlock on Devnet" })).toHaveLength(2);
-  });
-
-  it("previews legacy locked cosmetics but requests backend pricing before payment", async () => {
-    renderStudio();
-    openClassicEditor();
-    expect(screen.getByText(/No real money:/)).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "Unlock on Devnet" })[0]);
-
-    await waitFor(() => expect(api.getCosmeticQuote).toHaveBeenCalledWith("profile-frame"));
-    expect(await screen.findByText("Solana Devnet")).toBeInTheDocument();
-    expect(screen.getByText("Wallet payment control")).toBeInTheDocument();
-    expect(api.equipCosmetic).not.toHaveBeenCalled();
-  });
-
-  it("equips an approved included original item through PATCH and refreshes server state", async () => {
+  it("equips an approved included Laura item through the backend and refreshes state", async () => {
     const approvedMarketplace = marketplace.map((item) => item.sku === "avatar.top.male.utility-overshirt" ? { ...item, assetStatus: "approved" as const } : item);
     api.getAvatarMarketplace.mockResolvedValue(approvedMarketplace);
     renderStudio();
+    const outfits = await openTab("Outfits");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Utility overshirt, Owned" }));
+    fireEvent.click(within(outfits).getByRole("button", { name: "Utility overshirt, Owned" }));
     await waitFor(() => expect(api.setAvatarMarketplaceItem).toHaveBeenCalledWith("avatar.top.male.utility-overshirt", true));
     expect(api.getAvatarMarketplace).toHaveBeenCalledTimes(2);
   });
 
-  it("unlocks an earned collectible with the server price, then equips it", async () => {
+  it("explains the complete reward contract and unlocks with the server price", async () => {
     renderStudio();
-    fireEvent.click(await screen.findByRole("button", { name: "Mint circuit frame, 40 points" }));
-    fireEvent.click(screen.getByRole("button", { name: "Unlock with points" }));
+    expect(await screen.findByText("Both confirm completion")).toBeInTheDocument();
+    expect(screen.getByText(/each student receives 5 stars \/ 50 points/)).toBeInTheDocument();
+    expect(screen.getByText(/3 rewarded services per student per UTC day/)).toBeInTheDocument();
+    expect(screen.getByText(/Rating quality never changes the reward/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mint circuit frame, 4 reward stars · 40 points" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unlock with stars" }));
 
     await waitFor(() => expect(api.unlockWithRewardPoints).toHaveBeenCalledWith("reward-frame-mint"));
     expect(api.setAvatarMarketplaceItem).toHaveBeenCalledWith("reward-frame-mint", true);
-    expect(screen.getByLabelText("HitMeUp points balance")).toHaveTextContent("80 points");
+    expect(screen.getByLabelText(/80 HitMeUp points/)).toHaveTextContent("8 stars 80 points");
   });
 
-  it("quotes the shared purchaseSku for an approved original premium visual", async () => {
+  it("reports ownership success separately when reward equipment fails", async () => {
+    api.setAvatarMarketplaceItem.mockRejectedValueOnce(new Error("equip failed"));
+    renderStudio();
+    fireEvent.click(await screen.findByRole("button", { name: "Mint circuit frame, 4 reward stars · 40 points" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unlock with stars" }));
+
+    expect(await screen.findByText(/is unlocked and owned. Equipping did not finish/)).toBeInTheDocument();
+  });
+
+  it("quotes the shared purchase SKU for one premium bundle rather than charging per tile", async () => {
     const approvedMarketplace = marketplace.map((item) => item.sku === "avatar.top.male.star-tee" ? { ...item, assetStatus: "approved" as const } : item);
     api.getAvatarMarketplace.mockResolvedValue(approvedMarketplace);
     api.getCosmeticQuote.mockResolvedValue({ network: "devnet", productId: "avatar-premium-collection", label: "Avatar premium collection", lamports: 50_000_000, treasury: "Treasury111", checkoutId: "00000000-0000-4000-8000-000000000001" });
     renderStudio();
+    const outfits = await openTab("Outfits");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Star tee, 0.05 SOL Devnet" }));
+    fireEvent.click(within(outfits).getByRole("button", { name: "Star tee, 0.05 SOL Devnet" }));
+    expect(screen.getByText("One bundle, not one charge per item.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Get exact Devnet quote" }));
 
     await waitFor(() => expect(api.getCosmeticQuote).toHaveBeenCalledWith("avatar-premium-collection"));

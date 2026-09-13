@@ -5,7 +5,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProfileProjection, ProfileReview, ServiceRequestSummary } from "@/lib/types";
 
-vi.mock("./avatar-studio", () => ({ AvatarStudio: () => <section aria-label="Avatar Studio mock" /> }));
+vi.mock("./profile-avatar-link", () => ({
+  ProfileAvatarLink: () => <a href="/avatar?preview=1" aria-label="Customize your avatar">Avatar</a>,
+  ProfileAvatarPicture: () => <span>Avatar</span>,
+}));
 
 import { ProfileView } from "./campus-marketplace";
 
@@ -29,12 +32,11 @@ function renderProfile(onProfileChange = vi.fn()) {
 }
 
 describe("own profile preview", () => {
-  it("marks fixtures as local and shows role-derived activity and received review", () => {
+  it("links to the dedicated avatar editor and shows role-derived activity and received review", () => {
     renderProfile();
-    expect(screen.getByText("Local profile preview")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Customize your avatar" })).toHaveAttribute("href", "/avatar?preview=1");
     expect(screen.getByText("You provided")).toBeInTheDocument();
     expect(screen.getByText("Thoughtful and on time.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Avatar Studio mock")).toBeInTheDocument();
   });
 
   it("discards a preview draft on cancel and saves only when requested", async () => {

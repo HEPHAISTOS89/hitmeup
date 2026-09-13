@@ -79,12 +79,7 @@ function Login() {
       <section className={styles.campus} aria-label="Texas Tech University campus">
         <div className={styles.campusHeading}>
           <p>Texas Tech University</p>
-          <h1><span>People nearby.</span><span className={styles.accent}>Addresses nowhere.</span></h1>
-          <div className={styles.proofList} aria-label="How HitMeUp protects students">
-            <span><BadgeCheck size={17} /> University sign-in gates the network.</span>
-            <span><MapPinned size={17} /> Discovery uses approximate service areas.</span>
-            <span><LockKeyhole size={17} /> Exact sharing is voluntary and service-scoped.</span>
-          </div>
+          <h1 aria-label="Students helping students."><span>Students</span><span>helping</span><span className={styles.accent}>students.</span></h1>
         </div>
         <div className={styles.photoCredit}>
           Photo: <a href="https://commons.wikimedia.org/wiki/File:Texas_Tech_University_April_2022_16_(Administration).jpg" target="_blank" rel="noreferrer">Michael Barera</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a> · cropped
@@ -92,17 +87,15 @@ function Login() {
       </section>
       <section className={styles.signIn} aria-labelledby="login-heading">
         <div className={styles.card}>
-          <div className={styles.brand}><HitMeUpLogo size={78} /><strong>HitMeUp</strong><span>Student exchange</span></div>
-          <p className={styles.eyebrow}>PRIVATE CAMPUS EXCHANGE</p>
-          <h2 id="login-heading">Verify you belong here.</h2>
-          <p className={styles.subtitle}>Use your university Microsoft account. Google sign-in is not supported for this initial campus flow.</p>
+          <div className={styles.brand}><HitMeUpLogo size={88} /><strong>HitMeUp</strong></div>
+          <h2 id="login-heading">Welcome back.</h2>
+          <p className={styles.subtitle}>Verify with your university account.</p>
           <div className={styles.actions}>
           <a className={styles.microsoftButton} href="/auth/login?returnTo=/app">
             <span className="microsoft-mark" aria-hidden="true"><i /><i /><i /><i /></span>
             Continue with Microsoft <ArrowRight size={17} />
           </a>
           </div>
-          <p className={styles.footnote}>University access is verified through Microsoft. Your exact location is never part of public discovery.</p>
         </div>
       </section>
     </main>
