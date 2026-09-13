@@ -6,10 +6,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 vi.mock("./campus-map", () => ({
-  CampusMap: ({ services, onSelect }: { services: Array<{ id: string; title: string }>; onSelect: (id: string) => void }) => (
+  CampusMap: ({ services, onSelect, popupContent }: { services: Array<{ id: string; title: string }>; onSelect: (id: string) => void; popupContent?: React.ReactNode }) => (
     <div data-testid="map">
       {services.length} map listings
       {services.map((service) => <button type="button" key={service.id} aria-label={`Select ${service.title}`} onClick={() => onSelect(service.id)}>{service.title}</button>)}
+      {popupContent}
     </div>
   ),
 }));
@@ -27,7 +28,7 @@ describe("expanded marketplace taxonomy", () => {
     render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
 
     const rail = screen.getByRole("group", { name: "Browse all categories" });
-    fireEvent.click(within(rail).getByRole("button", { name: /^Social/i }));
+    fireEvent.click(within(rail).getByRole("button", { name: /^HitMeUp/i }));
 
     const subcategories = screen.getByRole("group", { name: "Hit Me Up / Social subcategories" });
     expect(subcategories).toHaveTextContent("Pickup games");
@@ -43,7 +44,9 @@ describe("expanded marketplace taxonomy", () => {
     expect(screen.getByRole("heading", { name: "Local, for longer." })).toBeInTheDocument();
     expect(screen.getByText("2 found")).toBeInTheDocument();
     expect(screen.getByTestId("map")).toHaveTextContent("2 map listings");
+    fireEvent.click(screen.getByRole("button", { name: "Select Coffee, snacks, and study tables" }));
     expect(screen.getByText("Sponsored · permanent")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Business details" })).toBeInTheDocument();
   });
 
   it("discloses the paid-placement boundary without pretending checkout works", () => {
@@ -61,12 +64,12 @@ describe("request selection safety", () => {
   it("does not carry the sample request into a newly selected listing", () => {
     render(<CampusMarketplace initialEntry="app" dataMode="preview" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Select USB-C charger for an hour" }));
-    fireEvent.click(screen.getByRole("button", { name: "Request help" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select I need a USB-C charger for an hour" }));
+    fireEvent.click(screen.getByRole("button", { name: "Volunteer to help" }));
 
     const drawer = screen.getByRole("dialog");
-    expect(within(drawer).getByRole("heading", { name: "USB-C charger for an hour" })).toBeInTheDocument();
-    expect(within(drawer).getByText("What do you need?")).toBeInTheDocument();
+    expect(within(drawer).getByRole("heading", { name: "I need a USB-C charger for an hour" })).toBeInTheDocument();
+    expect(within(drawer).getByText("How can you help?")).toBeInTheDocument();
     expect(screen.queryByText("Hi! Is the 4:30 PM slot still open?")).not.toBeInTheDocument();
   });
 });

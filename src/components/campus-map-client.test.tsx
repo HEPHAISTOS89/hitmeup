@@ -18,8 +18,19 @@ vi.mock("maplibre-gl", () => {
     setStyle = vi.fn();
     flyTo = vi.fn();
     jumpTo = vi.fn();
+    easeTo = vi.fn();
+    panBy = vi.fn();
+    stop = vi.fn();
     resize = vi.fn();
     remove = vi.fn();
+    getBearing = vi.fn(() => 0);
+    getPitch = vi.fn(() => 0);
+    canvas = document.createElement("canvas");
+    getCanvas = () => this.canvas;
+    dragPan = { enable: vi.fn(), disable: vi.fn() };
+    dragRotate = { enable: vi.fn(), disable: vi.fn() };
+    touchZoomRotate = { enable: vi.fn(), disable: vi.fn() };
+    touchPitch = { enable: vi.fn(), disable: vi.fn() };
     isStyleLoaded = vi.fn(() => false);
     hasImage = vi.fn(() => false);
     addImage = vi.fn();
@@ -61,10 +72,22 @@ vi.mock("maplibre-gl", () => {
     remove() { this.element.remove(); return this; }
   }
 
+  class FakePopup {
+    content: HTMLElement | null = null;
+    setLngLat() { return this; }
+    setDOMContent(content: HTMLElement) { this.content = content; return this; }
+    addTo(map: FakeMap) {
+      if (this.content) (map.options.container as HTMLElement).append(this.content);
+      return this;
+    }
+    remove() { this.content?.remove(); return this; }
+  }
+
   return {
     AttributionControl: class {},
     Map: FakeMap,
     Marker: FakeMarker,
+    Popup: FakePopup,
     NavigationControl: class {},
     setWorkerUrl: (value: string) => mapState.workerUrls.push(value),
   };
@@ -170,7 +193,7 @@ describe("campus map interaction and fallback", () => {
     const map = mapState.instances[0] as unknown as FakeMapInstance;
     act(() => map.emit("load"));
 
-    const marker = screen.getByRole("button", { name: /Calculus rescue session.*Approximate service area/ });
+    const marker = screen.getByRole("button", { name: /I need help with calculus.*Approximate service area/ });
     expect(marker).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(marker);
     expect(onSelect).toHaveBeenCalledWith("math-midterms");

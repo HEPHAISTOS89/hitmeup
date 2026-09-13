@@ -178,8 +178,8 @@ export default function CampusMapClient({
   onSelect: (id: string) => void;
   popupContent?: ReactNode;
 }) {
-  const [popupHost, setPopupHost] = useState<HTMLDivElement | null>(null);
-  useEffect(() => { setPopupHost(document.createElement("div")); }, []);
+  // This component is loaded with `ssr: false`, so the DOM is available during initialization.
+  const [popupHost] = useState<HTMLDivElement | null>(() => typeof document === "undefined" ? null : document.createElement("div"));
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef(new Map<string, MarkerRecord>());
