@@ -44,8 +44,8 @@ describe("profile Laura avatar projection", () => {
   it("uses Laura in preview before a marketplace response exists", () => {
     render(<ProfileAvatarPicture profile={profile} />);
 
-    expect(screen.getByRole("img", { name: "Taylor Garcia's Laura avatar" })).toHaveAttribute("data-collection", "male");
-    expect(screen.getByRole("img", { name: "Taylor Garcia's Laura avatar" })).toHaveAttribute("data-expression", "default");
+    expect(screen.getByRole("img", { name: "Taylor Garcia's avatar" })).toHaveAttribute("data-collection", "male");
+    expect(screen.getByRole("img", { name: "Taylor Garcia's avatar" })).toHaveAttribute("data-expression", "default");
   });
 
   it("reflects the server-equipped collection, top, bottom and expression after load and reload", () => {
@@ -58,7 +58,7 @@ describe("profile Laura avatar projection", () => {
       "avatar.background.grid",
     ])} />);
 
-    const avatar = screen.getByRole("img", { name: "Taylor Garcia's Laura avatar" });
+    const avatar = screen.getByRole("img", { name: "Taylor Garcia's avatar" });
     expect(avatar).toHaveAttribute("data-collection", "female");
     expect(avatar).toHaveAttribute("data-top", "2");
     expect(avatar).toHaveAttribute("data-bottom", "1");
@@ -86,7 +86,7 @@ describe("profile Laura avatar projection", () => {
   it("does not misrepresent a loading or failed marketplace response as a saved server loadout", () => {
     const { rerender } = render(<ProfileAvatarPicture profile={profile} marketplaceStatus="loading" />);
     expect(screen.getByRole("img", { name: "Taylor Garcia's avatar is loading" })).toHaveAttribute("data-avatar-status", "loading");
-    expect(screen.queryByRole("img", { name: "Taylor Garcia's Laura avatar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Taylor Garcia's avatar" })).not.toBeInTheDocument();
 
     rerender(<ProfileAvatarPicture profile={profile} marketplaceStatus="error" />);
     expect(screen.getByRole("img", { name: "Taylor Garcia's avatar is unavailable" })).toHaveAttribute("data-avatar-status", "error");

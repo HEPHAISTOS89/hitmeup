@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgeCheck, Check, Copy, Download, LoaderCircle, Palette, RotateCcw, ShieldCheck, Shuffle, Sparkles, Star, WalletCards, X } from "lucide-react";
+import { BadgeCheck, Check, Copy, Download, LoaderCircle, RotateCcw, ShieldCheck, Shuffle, Sparkles, Star, WalletCards, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
 import {
@@ -514,7 +514,7 @@ export function LauraAvatarMarketplace({
       anchor.href = url;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-      setAvatarMarketplaceMessage("Your Laura artwork preview was downloaded as a PNG.");
+      setAvatarMarketplaceMessage("Your avatar preview was downloaded as a PNG.");
     } catch (error) {
       setAvatarMarketplaceMessage(error instanceof Error ? error.message : "The PNG could not be created.");
     } finally {
@@ -560,25 +560,10 @@ export function LauraAvatarMarketplace({
 
   return (
     <section className="profile-section laura-avatar-experience" aria-labelledby="laura-avatar-title">
-      <div className="laura-avatar-hero">
-        <div>
-          <span className="section-kicker">YOUR LOOK. YOUR RULES.</span>
-          <h2 id="laura-avatar-title">MAKE IT <em>YOU.</em><span aria-hidden="true">✳</span></h2>
-        </div>
-        <p>Find your fit.<br />Add the details that make it yours.</p>
-        <span className="laura-mark" aria-hidden="true"><Palette size={19} /></span>
-      </div>
-      <p className="section-copy laura-avatar-intro">Laura&apos;s complete HitMeUp look builder, now connected to your verified profile, server-owned cosmetics, rewards and Devnet unlocks.</p>
-
-      <div className="avatar-access-guide" aria-label="Avatar customization access">
-        <div><span className="access-guide-icon is-included" aria-hidden="true"><Check size={16} /></span><p><strong>Always included</strong><span>Both Laura character collections and their core pieces stay included. Decorative extras use the access rules shown here.</span></p></div>
-        <div><span className="access-guide-icon is-earned" aria-hidden="true"><Star size={16} /></span><p><strong>Earned rewards</strong><span>Complete and mutually rate real services to earn non-cash reward stars for collectibles.</span></p></div>
-        <div><span className="access-guide-icon is-collectible" aria-hidden="true"><Sparkles size={16} /></span><p><strong>Devnet collection</strong><span>Premium pieces unlock through the verified test-token flow. Artwork uses Laura&apos;s actual raster cut-outs; ownership still comes only from the backend.</span></p></div>
-      </div>
-
-      <section className="laura-avatar-marketplace" aria-labelledby="laura-marketplace-heading">
+      <section className="laura-avatar-marketplace" aria-label="Avatar customization">
         <div className="laura-marketplace-bar">
-          <div><span className="section-kicker">HITMEUP ORIGINALS · SERVER BACKED</span><h3 id="laura-marketplace-heading">Build the full look.</h3></div>
+          <div><h2 id="laura-avatar-title">Customize</h2><p>Choose a look, then equip what you own.</p></div>
+          <div className="avatar-access-legend" aria-label="Item access"><span><i className="is-included" />Included</span><span><i className="is-earned" />Earned</span><span><i className="is-devnet" />Devnet</span></div>
           <div className="reward-balance" aria-label={`${balancePoints} HitMeUp points, equal to ${rewardStars(balancePoints)} reward stars`}><Star size={16} /><span>{rewardsStatus === "loading" ? "Loading rewards…" : rewardsStatus === "error" ? "Rewards unavailable" : <><strong>{rewardStars(balancePoints)}</strong> stars <small>{balancePoints} points</small></>}</span></div>
         </div>
 
@@ -586,35 +571,32 @@ export function LauraAvatarMarketplace({
         {avatarMarketplaceStatus === "error" && <div className="laura-marketplace-state is-error" role="alert"><ShieldCheck size={18} /><span>{avatarMarketplaceMessage || "The avatar collection is unavailable."} Your saved avatar remains unchanged.</span></div>}
 
         {avatarMarketplaceStatus === "ready" && <>
-          {hasPlaceholderAssets && <div className="avatar-asset-notice" role="note"><ShieldCheck size={17} /><p><strong>Server review gate</strong><span>Laura&apos;s actual artwork pack is present, but some catalog entries are still marked for backend review. Those options remain preview-only until the server approves them.</span></p></div>}
+          {hasPlaceholderAssets && <div className="avatar-asset-notice" role="note"><ShieldCheck size={17} /><p><strong>Preview only</strong><span>Some items are not available to equip yet.</span></p></div>}
           <div className="laura-workspace">
             <div className="laura-preview-panel">
-              <div className="avatar-preview-top"><span>01 / YOUR CHARACTER</span><span>{hasLocalAvatarPreview ? "LOCAL ART PREVIEW" : "SERVER LOADOUT"}</span></div>
+              <div className="avatar-preview-top"><span>Preview</span><span>{hasLocalAvatarPreview ? "Not saved" : "Saved look"}</span></div>
               <div className={`laura-stage laura-background-${activeBackgroundAsset?.pattern ?? activeBackgroundAsset?.id ?? "signal"}`} style={backgroundStyle(activeBackgroundAsset)}>
-                <span className="avatar-stage-note" aria-hidden="true">YOUR AVATAR.<br />YOUR STORY.</span>
-                {activeCharacterAsset ? <div className="laura-character-canvas" role="img" aria-label={`${activeCollection} Laura avatar wearing ${activeTop?.label ?? "default top"}, ${activeBottom?.label ?? "default bottom"}, ${activeExpression?.label ?? "default expression"}, with ${activeAccessoryItems.length} accessories and ${activeBackground?.label ?? "signal background"}`}>
+                {activeCharacterAsset ? <div className="laura-character-canvas" role="img" aria-label={`${activeCollection} avatar wearing ${activeTop?.label ?? "default top"}, ${activeBottom?.label ?? "default bottom"}, ${activeExpression?.label ?? "default expression"}, with ${activeAccessoryItems.length} accessories and ${activeBackground?.label ?? "signal background"}`}>
                   <LauraCharacter key={`${activeCollection}:${topIndex}:${bottomIndex}:${activeExpressionValue}`} className="laura-character-art" collection={activeCollection} top={topIndex} bottom={bottomIndex} expression={activeExpressionValue} />
                   {activeAccessoryAssets.map((asset) => <Image key={asset.id} className="laura-accessory-art" src={asset.file} alt="" width={asset.pixelWidth} height={asset.pixelHeight} style={accessoryPlacement(asset, activeCharacterAsset)} />)}
                 </div> : <div className="laura-art-missing" role="status">This look asset is unavailable.</div>}
-                <span className="avatar-stage-sticker" aria-hidden="true">100% YOU</span>
               </div>
               <div className="avatar-preview-bottom">
-                <div><span>YOUR CURRENT LOOK</span><strong>{activeTop?.label ?? "Original look"}</strong><small>{activeCollection === "female" ? "Female collection" : "Male collection"} · {activeBottom?.label ?? "Default bottom"} · {activeExpression?.label ?? "Default"}</small></div>
-                <span className={`server-loadout-mark ${hasLocalAvatarPreview ? "is-preview" : ""}`}><ShieldCheck size={15} />{hasLocalAvatarPreview ? "Preview only" : "Backend loadout"}</span>
+                <div><span>Current look</span><strong>{activeTop?.label ?? "Original look"}</strong><small>{activeCollection === "female" ? "Female" : "Male"} · {activeBottom?.label ?? "Default bottom"} · {activeExpression?.label ?? "Default"}</small></div>
+                <span className={`server-loadout-mark ${hasLocalAvatarPreview ? "is-preview" : ""}`}><ShieldCheck size={15} />{hasLocalAvatarPreview ? "Preview" : "Saved"}</span>
               </div>
               <div className="laura-preview-actions" aria-label="Avatar preview actions">
                 <button type="button" onClick={resetAvatarPreview} disabled={!hasLocalAvatarPreview}><RotateCcw size={14} /> Reset preview</button>
                 <button type="button" onClick={shuffleAvatarPreview}><Shuffle size={14} /> Shuffle owned</button>
                 <button type="button" onClick={() => void downloadAvatar()} disabled={!activeCharacterAsset || downloadBusy}><Download size={14} /> {downloadBusy ? "Preparing…" : "Download PNG"}</button>
               </div>
-              <div className="avatar-profile-sync"><span>{activeAccessoryItems.length} ACCESSOR{activeAccessoryItems.length === 1 ? "Y" : "IES"} {hasLocalAvatarPreview ? "PREVIEWED" : "EQUIPPED"}</span><span>{hasLocalAvatarPreview ? "PREVIEW IS NOT OWNERSHIP" : "OWNERSHIP VERIFIED SERVER-SIDE"}</span></div>
+              <div className="avatar-profile-sync"><span>{activeAccessoryItems.length} accessor{activeAccessoryItems.length === 1 ? "y" : "ies"}</span><span>{hasLocalAvatarPreview ? "Preview only" : "Synced with profile"}</span></div>
             </div>
 
             <div className="laura-editor">
               <div className="laura-character-switch" role="group" aria-label="Avatar collection">
-                {collectionItems.map((item) => <button type="button" key={item.sku} aria-pressed={isAvatarItemActive(item)} className={isAvatarItemActive(item) ? "is-active" : ""} onClick={() => void chooseAvatarItem(item)} disabled={Boolean(avatarMarketplaceBusySku)}><span className="collection-symbol" aria-hidden="true">{item.value === "female" ? "♀" : "♂"}</span><span><strong>{item.value === "female" ? "Female" : "Male"}</strong><small>{item.value === "female" ? "A new energy" : "The original"}</small></span><Check className="collection-check" size={16} aria-hidden="true" /></button>)}
+                {collectionItems.map((item) => <button type="button" key={item.sku} aria-pressed={isAvatarItemActive(item)} className={isAvatarItemActive(item) ? "is-active" : ""} onClick={() => void chooseAvatarItem(item)} disabled={Boolean(avatarMarketplaceBusySku)}><span className="collection-symbol" aria-hidden="true">{item.value === "female" ? "♀" : "♂"}</span><span><strong>{item.value === "female" ? "Female" : "Male"}</strong></span><Check className="collection-check" size={16} aria-hidden="true" /></button>)}
               </div>
-              <div className="avatar-editor-title"><div><span>{activeCollection.toUpperCase()} COLLECTION</span><h3>{lauraTab === "outfits" ? "Find your fit." : lauraTab === "expressions" ? "Set the expression." : lauraTab === "accessories" ? "Make it your own." : "Set the scene."}</h3></div><span>{activeAccessoryItems.length} EQUIPPED</span></div>
               <div className="laura-category-tabs" role="tablist" aria-label="HitMeUp avatar customization">
                 {LAURA_TABS.map(({ id, label, symbol }) => <button key={id} id={`laura-avatar-tab-${id}`} type="button" role="tab" aria-selected={lauraTab === id} aria-controls={`laura-avatar-panel-${id}`} tabIndex={lauraTab === id ? 0 : -1} className={lauraTab === id ? "is-active" : ""} onClick={() => setLauraTab(id)} onKeyDown={(event) => moveLauraTab(event, id)}><span aria-hidden="true">{symbol}</span>{label}</button>)}
               </div>
@@ -628,29 +610,23 @@ export function LauraAvatarMarketplace({
               </div>}
               {lauraTab === "accessories" && <div className="laura-tab-panel" id="laura-avatar-panel-accessories" role="tabpanel" aria-labelledby="laura-avatar-tab-accessories">
                 <div className="laura-option-heading"><strong>Pick your extras</strong><span>{accessoryItems.length} pieces</span></div><div className="laura-option-grid accessory-grid">{accessoryItems.map(lauraOptionTile)}</div>
-                <p className="laura-stack-note">Stack different groups together. Eyewear, hats, earrings and necklaces replace only the item in their own group.</p>
+                <p className="laura-stack-note">You can combine accessories from different groups.</p>
               </div>}
               {lauraTab === "backgrounds" && <div className="laura-tab-panel" id="laura-avatar-panel-backgrounds" role="tabpanel" aria-labelledby="laura-avatar-tab-backgrounds">
                 <div className="laura-option-heading"><strong>Solid colors</strong><span>6 styles</span></div><div className="laura-option-grid background-grid">{backgroundItems.filter((item) => !LAURA_MANIFEST.backgrounds.find((asset) => asset.id === item.value)?.pattern).map(lauraOptionTile)}</div>
                 <div className="laura-option-heading"><strong>Graphic backgrounds</strong><span>6 styles</span></div><div className="laura-option-grid background-grid">{backgroundItems.filter((item) => Boolean(LAURA_MANIFEST.backgrounds.find((asset) => asset.id === item.value)?.pattern)).map(lauraOptionTile)}</div>
               </div>}
-              <div className="avatar-editor-foot"><span>SMALL DETAILS. BIG PERSONALITY.</span><span>{avatarMarketplaceBusySku ? "Updating server loadout…" : hasLocalAvatarPreview ? "Local preview only · no ownership changed." : "Every equip change is validated by the backend."}</span></div>
+              <div className="avatar-editor-foot"><span>{avatarMarketplaceBusySku ? "Saving…" : hasLocalAvatarPreview ? "Preview only" : "Changes save to your profile"}</span></div>
             </div>
           </div>
 
           {visibleRewardItems.length > 0 && <section className="laura-reward-shelf" aria-labelledby="laura-reward-heading">
-            <div className="laura-option-heading"><div><span className="section-kicker">EARNED, NEVER BOUGHT</span><h3 id="laura-reward-heading" style={{ margin: 0 }}><strong>Laura service-reward pieces</strong></h3></div><span>{visibleRewardItems.length} pieces · {rewardStars(balancePoints)} stars available</span></div>
-            <p>Reward stars are a friendly display of backend points: 1 star equals {REWARD_STAR_POINTS} points. Rating quality never changes the reward.</p>
-            <div className="reward-rules" aria-label="How to earn reward stars">
-              <div><span>01</span><p><strong>Meet through HitMeUp</strong><small>The accepted request must reach the meeting stage.</small></p></div>
-              <div><span>02</span><p><strong>Both confirm completion</strong><small>The requester and provider must each finish the service.</small></p></div>
-              <div><span>03</span><p><strong>Both submit a rating</strong><small>When the request closes, each student receives 5 stars / 50 points.</small></p></div>
-            </div>
+            <div className="laura-option-heading"><div><h3 id="laura-reward-heading" style={{ margin: 0 }}><strong>Rewards</strong></h3></div><span>{rewardStars(balancePoints)} stars available</span></div>
+            <p>Complete a service and both leave a review to earn 5 stars. Limit: 3 rewarded services per day.</p>
             <div className="reward-ledger-summary">
               <div><span>Available</span><strong>{rewardStars(balancePoints)} stars</strong><small>{balancePoints} points</small></div>
               <div><span>Earned all-time</span><strong>{rewardStars(rewards?.lifetimeEarned ?? 0)} stars</strong><small>{rewards?.lifetimeEarned ?? 0} points</small></div>
               <div><span>Spent all-time</span><strong>{rewardStars(rewards?.lifetimeSpent ?? 0)} stars</strong><small>{rewards?.lifetimeSpent ?? 0} points</small></div>
-              <p><ShieldCheck size={16} /><span><strong>Anti-farming limit</strong> Up to 3 rewarded services per student per UTC day.</span></p>
             </div>
             {nextLockedReward && <div className="next-reward-progress"><div><span>Next collectible</span><strong>{nextLockedReward.label}</strong><small>{rewardStars(balancePoints)} / {rewardStars(nextLockedReward.rewardPoints)} stars</small></div><div role="progressbar" aria-label={`Progress toward ${nextLockedReward.label}`} aria-valuemin={0} aria-valuemax={nextLockedReward.rewardPoints} aria-valuenow={Math.min(balancePoints, nextLockedReward.rewardPoints)}><i style={{ width: `${nextRewardProgress}%` }} /></div></div>}
             <div className="laura-option-grid reward-grid">{visibleRewardItems.map(lauraOptionTile)}</div>

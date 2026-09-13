@@ -66,7 +66,7 @@ export function ProfileAvatarPicture({
   return <span
     className={`laura-profile-avatar laura-background-${background?.pattern ?? background?.id ?? "signal"}`}
     role="img"
-    aria-label={`${profile.displayName}'s Laura avatar`}
+    aria-label={`${profile.displayName}'s avatar`}
     data-collection={loadout.collection}
     data-top={loadout.top}
     data-bottom={loadout.bottom}

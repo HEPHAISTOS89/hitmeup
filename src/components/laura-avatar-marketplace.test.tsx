@@ -86,7 +86,7 @@ describe("Laura avatar marketplace with backend boundaries", () => {
     await screen.findByRole("tab", { name: "Outfits" });
     expect(screen.queryByRole("tab", { name: "Identity" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ebony" })).not.toBeInTheDocument();
-    const preview = screen.getByRole("img", { name: /male Laura avatar wearing/ });
+    const preview = screen.getByRole("img", { name: /male avatar wearing/ });
     expect(preview.querySelector("img")?.getAttribute("src")).toContain("%2Favatar%2Flaura%2Fcharacters%2Fmale-t0-b0-default.png");
     expect(api.updateProfile).not.toHaveBeenCalled();
   });
@@ -95,7 +95,7 @@ describe("Laura avatar marketplace with backend boundaries", () => {
     renderMarketplace({ previewMode: true });
     const outfits = await openTab("Outfits");
     fireEvent.click(within(outfits).getByRole("button", { name: "Utility overshirt, Owned" }));
-    expect(screen.getByText("PREVIEW IS NOT OWNERSHIP")).toBeInTheDocument();
+    expect(screen.getAllByText("Preview only").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Reset preview" }));
     expect(screen.getByText(/Preview reset to your backend loadout/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Shuffle owned" }));
@@ -114,7 +114,8 @@ describe("Laura avatar marketplace with backend boundaries", () => {
     expect(screen.queryByText("Campus theme")).not.toBeInTheDocument();
     expect(screen.queryByText("Trust badge")).not.toBeInTheDocument();
     expect(screen.queryByText("Mint circuit frame")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Laura service-reward pieces" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Rewards" })).toBeInTheDocument();
+    expect(screen.queryByText(/Laura/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Night beanie, 4 reward stars · 40 points" })).toBeInTheDocument();
   });
 
@@ -134,11 +135,11 @@ describe("Laura avatar marketplace with backend boundaries", () => {
     renderMarketplace();
     const panel = await openTab("Backdrop");
 
-    expect(screen.getByText("Server review gate")).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("Some items are not available to equip yet.");
     expect(screen.getByText("Graphic backgrounds").parentElement).toHaveTextContent("6 styles");
     expect(within(panel).getAllByRole("button")).toHaveLength(12);
     fireEvent.click(within(panel).getByRole("button", { name: "Noise burst, 0.05 SOL Devnet · preview only" }));
-    expect(screen.getByText("PREVIEW IS NOT OWNERSHIP")).toBeInTheDocument();
+    expect(screen.getAllByText("Preview only").length).toBeGreaterThan(0);
     expect(api.setAvatarMarketplaceItem).not.toHaveBeenCalled();
   });
 
@@ -155,10 +156,8 @@ describe("Laura avatar marketplace with backend boundaries", () => {
 
   it("explains the complete reward contract and unlocks with the server price", async () => {
     renderMarketplace();
-    expect(await screen.findByText("Both confirm completion")).toBeInTheDocument();
-    expect(screen.getByText(/each student receives 5 stars \/ 50 points/)).toBeInTheDocument();
-    expect(screen.getByText(/3 rewarded services per student per UTC day/)).toBeInTheDocument();
-    expect(screen.getByText(/Rating quality never changes the reward/)).toBeInTheDocument();
+    expect(await screen.findByText(/Complete a service and both leave a review to earn 5 stars/)).toBeInTheDocument();
+    expect(screen.getByText(/Limit: 3 rewarded services per day/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Night beanie, 4 reward stars · 40 points" }));
     fireEvent.click(screen.getByRole("button", { name: "Unlock with stars" }));

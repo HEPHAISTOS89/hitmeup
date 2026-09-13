@@ -1328,7 +1328,7 @@ export function ProfileView({ profile, profileStatus = "ready", requests, review
 
         {profileStatus === "loading" && <div className="profile-load-state" role="status"><LoaderCircle className="spin" size={17} /> Loading profile details…</div>}
         {profileStatus === "error" && <div className="profile-load-state is-error" role="alert"><TriangleAlert size={17} /> Profile details could not be loaded. Refresh and try again.</div>}
-        {marketplaceStatus === "error" && <div className="profile-load-state is-error" role="alert"><TriangleAlert size={17} /> Your saved Laura avatar could not be loaded. No default look is being shown as your server loadout.</div>}
+        {marketplaceStatus === "error" && <div className="profile-load-state is-error" role="alert"><TriangleAlert size={17} /> Your saved avatar could not be loaded. No default look is being shown as your profile.</div>}
 
         <div className="profile-stats" aria-label="Profile stats">
           <div><strong>{profile?.completedCount ?? "—"}</strong><span>Completed</span></div>

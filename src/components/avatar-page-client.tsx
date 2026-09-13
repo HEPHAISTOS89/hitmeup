@@ -52,13 +52,13 @@ export function AvatarPageClient({ preview = false }: { preview?: boolean }) {
       <HitMeUpLogo size={58} title="HitMeUp" />
       {state === "loading" ? <LoaderCircle className="spin" size={24} /> : state === "error" ? <TriangleAlert size={24} /> : <ShieldCheck size={24} />}
       <h1>{state === "loading" ? "Loading your avatar…" : state === "unauthenticated" ? "Verify before customizing." : "Your avatar is temporarily unavailable."}</h1>
-      <p>{state === "loading" ? "Checking profile and server-owned Laura collection." : state === "unauthenticated" ? "Use your university Microsoft account to open the editor." : "No profile or ownership state was changed."}</p>
+      <p>{state === "loading" ? "Checking your profile and saved items." : state === "unauthenticated" ? "Use your university Microsoft account to open the editor." : "No profile or ownership state was changed."}</p>
       {state !== "loading" && <a className="primary-action" href={state === "unauthenticated" ? "/auth/login?returnTo=/avatar" : appProfileHref}>{state === "unauthenticated" ? "Continue with Microsoft" : "Back to HitMeUp"}</a>}
     </section></main>;
   }
 
   return <main className="avatar-editor-page">
-    <header className="avatar-route-header"><a href={appProfileHref}><ArrowLeft size={16} /> Back to profile</a><div><span className="section-kicker">LAURA&apos;S AVATAR WORKSHOP · BACKEND CONNECTED</span><h1>Your avatar</h1></div></header>
+    <header className="avatar-route-header"><a href={appProfileHref}><ArrowLeft size={16} /> Back to profile</a><h1>Your avatar</h1></header>
     <LauraAvatarMarketplace profile={profile} previewMode={preview} onProfileChange={setProfile} />
   </main>;
 }
