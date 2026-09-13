@@ -52,7 +52,6 @@ import {
   normalizeServiceSnapshot,
   postMessage,
   recordProductEvent,
-  explainServiceRecommendation,
   revokeLocation,
   shareLocation,
   submitRating,
@@ -328,8 +327,6 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
   const [smartBusy, setSmartBusy] = useState(false);
   const [smartError, setSmartError] = useState("");
   const [smartResult, setSmartResult] = useState<{ source: "gemini" | "deterministic-fallback" | "preview"; summary: string } | null>(null);
-  const [matchExplanation, setMatchExplanation] = useState<{ serviceId: string; text: string; source: "gemini" | "deterministic-fallback" | "preview" } | null>(null);
-  const [matchExplanationBusy, setMatchExplanationBusy] = useState(false);
   const [serverRecommendations, setServerRecommendations] = useState<Record<string, { score: number; explanation: string }>>({});
   const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
@@ -673,7 +670,6 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     }
     setSelectedId(id);
     setMapPopupOpen(true);
-    setMatchExplanation((current) => current?.serviceId === id ? current : null);
     if (dataMode === "live" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
       void recordProductEvent({ name: "service_viewed", serviceId: id, metadata: { source: serverRecommendations[id] ? "profile" : "discovery", view: "service" } }).catch(() => undefined);
     }
@@ -899,28 +895,6 @@ function MarketplaceShell({ dataMode, initialView }: { dataMode: DataMode; initi
     }
   }
 
-  async function explainSelectedMatch() {
-    if (!selected || matchExplanationBusy) return;
-    if (matchExplanation?.serviceId === selected.id) {
-      setMatchExplanation(null);
-      return;
-    }
-    if (dataMode === "preview") {
-      setMatchExplanation({ serviceId: selected.id, text: selected.explanation, source: "preview" });
-      return;
-    }
-    setMatchExplanationBusy(true);
-    try {
-      const result = await explainServiceRecommendation(selected.id);
-      setMatchExplanation({ serviceId: selected.id, text: result.explanation, source: result.source });
-    } catch (error) {
-      setMatchExplanation({ serviceId: selected.id, text: selected.explanation, source: "deterministic-fallback" });
-      setDataError(error instanceof Error ? `${error.message} Showing the local match explanation instead.` : "Showing the local match explanation instead.");
-    } finally {
-      setMatchExplanationBusy(false);
-    }
-  }
-
   async function useWritingAssistant() {
     setAssistantError("");
     if (dataMode === "preview") {
@@ -1143,51 +1117,6 @@ function MapListingPopup({ service, requestDisabled, onAction }: { service: Rank
     <strong>{service.title}</strong>
     <p><span><MapPin size={12} aria-hidden="true" /> {service.distanceMiles.toFixed(1)} mi</span><b>{service.price}</b></p>
     <button type="button" disabled={!permanent && requestDisabled} onClick={onAction}>{!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Request help"}<ChevronRight size={14} aria-hidden="true" /></button>
-  </article>;
-}
-
-function ServicePeek({
-  service,
-  onRequest,
-  onBusiness,
-  requestDisabled,
-  requiresGeminiConsent,
-  onExplain,
-  explanation,
-  explanationBusy,
-  personalized,
-}: {
-  service: RankedService;
-  onRequest: () => void;
-  onBusiness: () => void;
-  requestDisabled: boolean;
-  requiresGeminiConsent: boolean;
-  onExplain: () => void;
-  explanation: { text: string; source: "gemini" | "deterministic-fallback" | "preview" } | null;
-  explanationBusy: boolean;
-  personalized: boolean;
-}) {
-  const [explainConsent, setExplainConsent] = useState(false);
-  const permanent = service.listingKind === "permanent";
-  const definition = categoryDefinition(service.category);
-  return <article className={`service-peek ${permanent ? "is-permanent" : "is-temporary"}`}>
-    <div className="inspector-signal" aria-hidden="true"><i /><i /><i /></div>
-    <div className="service-peek-mark" style={{ background: service.accent }}><ServiceGlyph name={definition.icon} size={22} /><span>{service.provider.initials}</span></div>
-    <div className="service-peek-main">
-      <div className="service-peek-top"><span>{definition.label}</span><span><MapPin size={13} /> {service.distanceMiles.toFixed(1)} mi</span></div>
-      <div className={`listing-badge ${permanent ? "permanent" : "temporary"}`}>{permanent ? <><Store size={13} /> Sponsored · permanent</> : <><Clock3 size={13} /> Temporary</>}</div>
-      <h2>{service.title}</h2>
-      <p>{service.description}</p>
-      {service.subcategory && <div className="subcategory-label"><ServiceGlyph name={definition.subcategories.find((item) => item.label === service.subcategory)?.icon ?? definition.icon} size={14} /> {service.subcategory}</div>}
-      <div className="service-tags">{service.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-      <div className="provider-line"><strong>{service.provider.name}</strong>{service.provider.verified && <BadgeCheck size={14} />}{service.provider.ratingCount > 0 && <span><Star size={13} fill="currentColor" /> {service.provider.rating} ({service.provider.ratingCount})</span>}</div>
-      <div className="inspector-fact"><Clock3 size={15} /><span><small>{permanent ? "Hours" : "Availability"}</small><strong>{service.availability}</strong></span></div>
-      <div className="inspector-fact"><ShieldCheck size={15} /><span><small>Location</small><strong>{permanent ? "Public only after business review" : "Approximate zone until mutual consent"}</strong></span></div>
-      {requiresGeminiConsent && !explanation && <label className="gemini-consent compact-consent" title="Shares the public listing and your approved interest tags, never private chat or exact location."><input type="checkbox" checked={explainConsent} onChange={(event) => setExplainConsent(event.target.checked)} /><span>Use Gemini for this match.</span></label>}
-      <button className="match-explain-toggle" type="button" onClick={onExplain} disabled={explanationBusy || (requiresGeminiConsent && !explainConsent)}>{explanationBusy ? <LoaderCircle className="spin" size={14} /> : <Sparkles size={14} />} {explanation ? "Hide match reason" : personalized ? "Why this is for you" : "Why this match"}</button>
-      {explanation && <div className="match-explanation" role="status"><span>{explanation.source === "gemini" ? "GEMINI EXPLANATION" : explanation.source === "preview" ? "PREVIEW EXPLANATION" : "PRIVATE FALLBACK"}</span><p>{explanation.text}</p><small>Uses only public listing signals and your approved profile interests.</small></div>}
-    </div>
-    <div className="service-peek-action"><strong>{service.price}</strong><button type="button" onClick={permanent ? onBusiness : onRequest} disabled={!permanent && requestDisabled}>{!permanent && requestDisabled ? "Rate first" : permanent ? "Business details" : "Request help"}<ChevronRight size={16} /></button></div>
   </article>;
 }
 
