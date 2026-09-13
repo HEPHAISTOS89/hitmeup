@@ -13,13 +13,37 @@ export type AuthResult =
 
 let client: Auth0Client | undefined;
 
+const SESSION_USER_CLAIMS = new Set([
+  "sub",
+  "email",
+  "email_verified",
+  "https://hitmeup.tech/role",
+  "https://hitmeup.tech/edu_domain",
+  "https://hitmeup.tech/connection_strategy",
+  "https://hitmeup.tech/tid",
+]);
+
+export function sanitizeSessionUser(user: User & Record<string, unknown>): User {
+  return Object.fromEntries(
+    Object.entries(user).filter(([key]) => SESSION_USER_CLAIMS.has(key)),
+  ) as User;
+}
+
 function getClient() {
   if (client) return client;
   if (!process.env.AUTH0_DOMAIN || !process.env.AUTH0_CLIENT_ID || !process.env.AUTH0_CLIENT_SECRET || !process.env.AUTH0_SECRET || !process.env.APP_BASE_URL) {
     return null;
   }
   try {
-    client = new Auth0Client();
+    client = new Auth0Client({
+      // SDK v4 keeps only its default profile claims unless this hook is set.
+      // Persist only the namespaced Action claims required by the student gate,
+      // while discarding display data and every unrelated claim from the cookie.
+      beforeSessionSaved: async (session) => ({
+        ...session,
+        user: sanitizeSessionUser(session.user as User & Record<string, unknown>),
+      }),
+    });
     return client;
   } catch {
     return null;
@@ -70,6 +94,23 @@ export async function requireVerifiedStudent(): Promise<AuthResult> {
   }
   if (!session?.user) return { ok: false, status: 401, code: "unauthenticated" };
   const student = verifiedStudentFromSessionClaims(session.user as typeof session.user & Record<string, unknown>);
+  if (!student) {
+    const user = session.user as typeof session.user & Record<string, unknown>;
+    const role = user.role ?? user["https://hitmeup.tech/role"];
+    const tenant = user.tid ?? user["https://hitmeup.tech/tid"];
+    const strategy = user.connection_strategy ?? user["https://hitmeup.tech/connection_strategy"];
+    const configuredTenant = process.env.AUTH0_MICROSOFT_TID?.trim();
+    const allowedStrategies = (process.env.AUTH0_MICROSOFT_STRATEGIES ?? "waad,windowslive")
+      .split(",").map((value) => value.trim()).filter(Boolean);
+    console.warn("Auth0 session claims failed the HitMeUp student gate", {
+      hasSubject: typeof user.sub === "string" && user.sub.length > 0,
+      hasEmail: typeof user.email === "string" && user.email.length > 0,
+      emailVerified: user.email_verified === true,
+      roleAccepted: role === "authenticated",
+      tenantAccepted: !configuredTenant || tenant === configuredTenant,
+      strategyAccepted: typeof strategy === "string" && allowedStrategies.includes(strategy),
+    });
+  }
   return student
     ? { ok: true, student }
     : { ok: false, status: 403, code: "unverified_student" };

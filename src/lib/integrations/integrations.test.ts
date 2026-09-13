@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isVerifiedStudent, verifiedStudentFromSessionClaims } from "../auth0";
+import { isVerifiedStudent, sanitizeSessionUser, verifiedStudentFromSessionClaims } from "../auth0";
 import { deterministicSuggestion, suggestService } from "./gemini";
 import { appendTigerEvent, bindTigerActor, recordTigerEvent } from "./tiger";
 import { getCosmeticQuote, verifyCosmeticPayment } from "./solana";
@@ -10,6 +10,28 @@ afterEach(() => {
 });
 
 describe("Auth0 student boundary", () => {
+  it("keeps only the minimal profile and student-gate claims in the encrypted session", () => {
+    const user = sanitizeSessionUser({
+      sub: "waad|student",
+      email: "a@ttu.edu",
+      email_verified: true,
+      "https://hitmeup.tech/role": "authenticated",
+      "https://hitmeup.tech/edu_domain": "ttu.edu",
+      "https://hitmeup.tech/connection_strategy": "waad",
+      "https://hitmeup.tech/tid": "ttu-tenant",
+      incidental_claim: "must-not-enter-the-session-cookie",
+    } as never) as Record<string, unknown>;
+
+    expect(user).toMatchObject({
+      sub: "waad|student",
+      email: "a@ttu.edu",
+      "https://hitmeup.tech/role": "authenticated",
+      "https://hitmeup.tech/connection_strategy": "waad",
+      "https://hitmeup.tech/tid": "ttu-tenant",
+    });
+    expect(user).not.toHaveProperty("incidental_claim");
+  });
+
   it("requires a verified email on an approved edu domain", () => {
     expect(isVerifiedStudent({ sub: "student", email: "a@ttu.edu", email_verified: true })).toMatchObject({ eduDomain: "ttu.edu" });
     expect(isVerifiedStudent({ sub: "student", email: "a@ttu.edu", email_verified: false })).toBeNull();

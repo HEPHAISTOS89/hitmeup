@@ -63,6 +63,15 @@ export async function allowRate(subject: string, operation: string, limit: numbe
     return { allowed: row.allowed, retryAfterSeconds: Math.max(0, row.retry_after_seconds) };
   } catch (error) {
     if (error instanceof RateLimitUnavailableError) throw error;
+    const details = error && typeof error === "object"
+      ? error as { name?: unknown; code?: unknown; status?: unknown }
+      : {};
+    console.warn("Shared rate limit request failed", {
+      errorType: typeof error,
+      errorName: typeof details.name === "string" ? details.name : "unknown",
+      errorCode: typeof details.code === "string" ? details.code : "unknown",
+      status: typeof details.status === "number" ? details.status : null,
+    });
     throw new RateLimitUnavailableError();
   }
 }

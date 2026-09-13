@@ -33,7 +33,7 @@ An outstanding outbound rating blocks only the student attempting to offer, requ
 
 ### Auth0
 
-`src/proxy.ts` uses the official SDK-wide matcher so auth routes and session refreshes execute. The local Action additionally restricts the login to Microsoft connection strategies and approved university domains. Dashboard connection creation, callback changes, Action deployment, and a real TTU sign-in are external configuration and are not proven by local tests.
+`src/proxy.ts` uses the official SDK-wide matcher so auth routes and session refreshes execute. The local Action additionally restricts the login to Microsoft connection strategies and approved university domains. The deployed Preview completed a real TTU Microsoft callback and authenticated-session check. This proves the exercised Preview path only; it does not claim a separate Production Auth0/application deployment.
 
 The Action uses `ALLOWED_EDU_DOMAINS`, `MICROSOFT_CONNECTION_STRATEGIES`, and optional `MICROSOFT_TENANT_ID` Action secrets. Their application-runtime equivalents are `ALLOWED_EDU_DOMAINS`, `AUTH0_MICROSOFT_STRATEGIES`, and optional `AUTH0_MICROSOFT_TID`.
 
@@ -74,6 +74,14 @@ passed to the normal Supabase migration runner or replayed on Development.
 
 Tiger Data has its separate migration at `tiger/migrations/001_append_only_events.sql`.
 
+All six active Development migrations were applied to Supabase project
+`olifkkohqhkcottaiqbs`. A rollback-only two-student smoke transaction exercised
+service creation, request acceptance, chat, mutual location sharing, bilateral
+completion, and bilateral ratings without retaining QA rows. At verification time
+the `supabase_migrations.schema_migrations` ledger was absent, so there is no
+ledger-based proof of the applied versions; do not interpret that absence as proof
+that the schema is empty.
+
 After explicit production authorization, the first four files were applied in one transaction on 2026-09-12 to Supabase project `audoriergtssfvarbeiy`, branch `main` (`PRODUCTION`). The first two attempts found a PostgreSQL numeric-round typing defect and then a parenthesis defect in the recommendation projection; each attempt rolled back completely, the source migration was corrected, and the final transaction committed. Postflight checks confirmed the 11 expected tables, RLS on all of them, 17 public-schema policies, PostGIS, authenticated-only received-review execution, blocked raw profile reads, and the recommendation/profile RPCs.
 
 The linked Supabase migration API subsequently initialized and repaired `supabase_migrations.schema_migrations`. The recorded Production history contains the four applied schema versions, the production-only `20260913040702_repair_manually_applied_hitmeup_history` ledger entry, and `20260913042018_harden_advisor_findings_without_contract_change`. The repair entry is represented in source control only by the audit artifact above; it is not an active Development migration. The marketplace migration remains a Development-sequence change and is not represented as applied Production history by this document.
@@ -82,4 +90,4 @@ The hardening migration preserves the application RPC contract while making `pub
 
 Supabase Advisor still reports platform-owned PostGIS objects in the recorded Production `public` schema: `spatial_ref_sys` and the three `st_estimatedextent` overloads. PostGIS is non-relocatable on this project, `spatial_ref_sys` is owned by `supabase_admin`, and the migration role cannot alter it. Reinstalling or taking ownership would risk the live geography columns and was intentionally rejected. Development installs PostGIS in `extensions`; the hardening migration handles that schema without moving or recreating the extension. Advisor also lists the authenticated `SECURITY DEFINER` application RPCs by design; they remain executable because they are the checked API boundary and revoking them would break the product. Newly created indexes remain marked unused until real traffic exercises them.
 
-A remote Development audit confirmed the Tiger service is ready, its TLS connection succeeds, and append/readback plus invalid-event rejection behave as intended. Auth0/Microsoft and Supabase third-party auth are configured separately from database-schema proof; the full browser callback/session remains a distinct pending gate. Runtime secrets belong in hosted secret storage; this workspace intentionally contains no `.env` or `.env.local` file.
+A remote Development audit confirmed the Tiger service is ready, its TLS connection succeeds, and append/readback plus invalid-event rejection behave as intended. The server Supabase secret was refreshed in Vercel Preview and Development, followed by a new deployment; the deployed Preview loaded stably. Auth0/Microsoft and Supabase third-party auth are configured separately from database-schema proof, and the TTU browser callback/session was proven on that Preview. The dedicated Production application remains unconfigured and undeployed. Runtime secrets belong in hosted secret storage; this workspace intentionally contains no `.env` or `.env.local` file.

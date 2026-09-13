@@ -75,17 +75,18 @@ private key, auth token, or wallet signing material.
 ## External setup status
 
 - Development boundary: hosted runtime variables are installed only for Vercel
-  Preview and Development. They are not present in Production. A new deployment is
-  still required before the existing Preview can consume the latest values; this
-  repository batch does not claim that such a deployment occurred.
-- Supabase Development: project `olifkkohqhkcottaiqbs` contains the first four
-  schema migrations, 11 RLS-protected tables, PostGIS under `extensions`, and the
-  Auth0 third-party authentication integration enabled for the HitMeUp tenant.
-  A rollback-only two-student smoke transaction exercised service creation,
-  request acceptance, chat, mutual location sharing, bilateral completion, and
-  bilateral ratings without retaining QA rows. The advisor hardening and
-  marketplace-taxonomy migrations remain migration-first until their final
-  Development application is recorded below or in a later verified update.
+  Preview and Development. The server Supabase secret was refreshed in both
+  environments, and a new deployment completed; the deployed Preview loaded
+  stably. Production remains unconfigured and has no claimed application
+  deployment.
+- Supabase Development: project `olifkkohqhkcottaiqbs` has the six active schema
+  migrations, 11 RLS-protected tables, PostGIS under `extensions`, and the Auth0
+  third-party authentication integration enabled for the HitMeUp tenant. A
+  rollback-only two-student smoke transaction exercised service creation, request
+  acceptance, chat, mutual location sharing, bilateral completion, and bilateral
+  ratings without retaining QA rows. The Development schema was applied, but the
+  `supabase_migrations.schema_migrations` ledger is absent, so this is not ledger
+  proof of the applied versions.
 - Supabase Production history: after explicit authorization, migrations
   `202609120001`, `202609120002`, `202609120004`, and `202609120005` were
   applied atomically on 2026-09-12 to project `audoriergtssfvarbeiy`, branch
@@ -107,10 +108,10 @@ private key, auth token, or wallet signing material.
   live model listing and structured generation returned HTTP 200, and the
   adapter plus deterministic fallback are covered by local tests.
 - Auth0: the HitMeUp application, Microsoft TTU connection, verified `.edu`
-  admission Action, and Supabase third-party-auth bridge are configured. The
-  local Authorization Code + PKCE flow reaches the Auth0 consent screen. Final
-  consent, callback and authenticated session proof remain pending; Preview URL
-  changes are prepared but not yet saved in the Auth0 dashboard.
+  admission Action, and Supabase third-party-auth bridge are configured. A real
+  TTU Microsoft Authorization Code + PKCE callback and authenticated session were
+  proven on the deployed Preview. This does not claim any separate Production
+  Auth0/application deployment.
 - Solana: the Devnet treasury and RPC settings are installed for Vercel
   Preview/Development, and wallet/receipt boundaries are covered by tests. The
   treasury balance is zero and public Devnet airdrop attempts were rate-limited,
