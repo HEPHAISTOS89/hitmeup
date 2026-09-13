@@ -5,9 +5,21 @@ import { getCosmeticQuote } from "@/lib/integrations/solana";
 import { allowRate } from "@/lib/rate-limit";
 import { assertSameOriginMutation } from "@/lib/security";
 import { createServerSupabaseAdminClient, SupabaseConfigurationError } from "@/lib/supabase/factory";
-import { getSolanaProductState, hasPaidCosmeticOwnership, reserveCosmeticQuote } from "@/lib/supabase/repository";
+import { reserveCosmeticQuote } from "@/lib/supabase/repository";
 
 export function solanaQuoteFailureResponse(error: unknown) {
+  if (error instanceof Error && error.message === "cosmetic already owned") {
+    return NextResponse.json(
+      { error: "This cosmetic is already owned.", code: "already_owned" },
+      { status: 409 },
+    );
+  }
+  if (error instanceof Error && error.message === "invalid cosmetic quote") {
+    return NextResponse.json(
+      { error: "The Devnet catalog is not synchronized.", code: "configuration" },
+      { status: 503 },
+    );
+  }
   if (error instanceof Error && error.message === "purchase already in progress") {
     return NextResponse.json(
       {
@@ -45,13 +57,10 @@ export async function POST(request: Request) {
     }
     const quote = getCosmeticQuote(body.productId);
     const admin = createServerSupabaseAdminClient();
-    const product = await getSolanaProductState(admin, body.productId);
-    if (!product || product.lamports !== quote.lamports) {
-      return NextResponse.json({ error: "The Devnet catalog is not synchronized.", code: "configuration" }, { status: 503 });
-    }
-    if (await hasPaidCosmeticOwnership(admin, auth.student.sub, body.productId)) {
-      return NextResponse.json({ error: "This cosmetic is already owned.", code: "already_owned" }, { status: 409 });
-    }
+    // The SECURITY DEFINER reservation RPC validates the active product,
+    // immutable amount, profile and existing ownership atomically. Keeping
+    // these checks inside that transaction avoids broad service-role table
+    // grants and removes a race between preflight reads and reservation.
     const checkoutId = await reserveCosmeticQuote(admin, auth.student.sub, body.productId, quote.lamports, body.checkoutKey);
     return NextResponse.json({ ...quote, checkoutId });
   } catch (error) {
